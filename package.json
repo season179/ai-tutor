@@ -19,7 +19,8 @@
     "dev:worker": "pnpm build:client && wrangler dev",
     "start": "node scripts/dev.mjs --script start:app",
     "start:app": "pnpm build && node dist/server.js",
-    "typecheck": "pnpm check:worker-types && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.worker.json"
+    "typecheck": "pnpm check:worker-types && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.worker.json && pnpm test",
+    "test": "node --experimental-strip-types --test test/**/*.test.ts"
   },
   "portless": {
     "name": "ai-tutor",

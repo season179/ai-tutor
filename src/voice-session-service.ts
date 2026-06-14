@@ -6,6 +6,7 @@ import {
   defaultSafetyIdentifier
 } from "./realtime-token.js";
 import { tutorPolicy } from "./tutor-policy.js";
+import { serializeOpenAIRealtimeSessionDescriptor } from "./voice-session-schema.js";
 import type {
   CreateVoiceSessionRequest,
   OpenAIRealtimeSessionDescriptor,
@@ -95,7 +96,7 @@ class OpenAIRealtimeSessionService implements VoiceSessionService {
       voice: this.options.voice
     });
 
-    return {
+    return serializeOpenAIRealtimeSessionDescriptor({
       capabilities: {
         audioInput: true,
         audioOutput: true,
@@ -109,7 +110,7 @@ class OpenAIRealtimeSessionService implements VoiceSessionService {
       sessionId: crypto.randomUUID(),
       tutorPolicy,
       voice: readOpenAISessionVoice(payload) ?? this.options.voice
-    };
+    });
   }
 
   private createSafetyIdentifierSeed(callerKey: string | undefined): string {

@@ -4,6 +4,7 @@ import {
   type VoiceClientEvent
 } from "./voice-client-adapter.js";
 import { tutorPolicy } from "./tutor-policy.js";
+import { parseVoiceSessionDescriptor } from "./voice-session-schema.js";
 import {
   voiceSessionPath,
   type CreateVoiceSessionRequest,
@@ -125,84 +126,6 @@ async function fetchVoiceSessionDescriptor(): Promise<VoiceSessionDescriptor> {
   }
 
   return parseVoiceSessionDescriptor(payload);
-}
-
-function parseVoiceSessionDescriptor(value: unknown): VoiceSessionDescriptor {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Voice session response was not a JSON object.");
-  }
-
-  const descriptor = value as Record<string, unknown>;
-
-  if (descriptor.provider === "openai-realtime" && isOpenAIRealtimeSessionDescriptor(descriptor)) {
-    return descriptor;
-  }
-
-  if (descriptor.provider === "livekit-agents" && isLiveKitAgentsSessionDescriptor(descriptor)) {
-    return descriptor;
-  }
-
-  throw new Error("Voice session response did not match a supported provider shape.");
-}
-
-function isOpenAIRealtimeSessionDescriptor(
-  descriptor: Record<string, unknown>
-): descriptor is Extract<VoiceSessionDescriptor, { provider: "openai-realtime" }> {
-  return (
-    typeof descriptor.clientSecret === "string" &&
-    isVoiceCapabilities(descriptor.capabilities) &&
-    typeof descriptor.model === "string" &&
-    typeof descriptor.sessionId === "string" &&
-    isTutorPolicy(descriptor.tutorPolicy) &&
-    typeof descriptor.voice === "string"
-  );
-}
-
-function isLiveKitAgentsSessionDescriptor(
-  descriptor: Record<string, unknown>
-): descriptor is Extract<VoiceSessionDescriptor, { provider: "livekit-agents" }> {
-  return (
-    typeof descriptor.agentName === "string" &&
-    isVoiceCapabilities(descriptor.capabilities) &&
-    typeof descriptor.livekitUrl === "string" &&
-    typeof descriptor.participantIdentity === "string" &&
-    typeof descriptor.participantToken === "string" &&
-    typeof descriptor.roomName === "string" &&
-    typeof descriptor.sessionId === "string" &&
-    isTutorPolicy(descriptor.tutorPolicy)
-  );
-}
-
-function isVoiceCapabilities(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  const capabilities = value as Record<string, unknown>;
-
-  return (
-    typeof capabilities.audioInput === "boolean" &&
-    typeof capabilities.audioOutput === "boolean" &&
-    typeof capabilities.imageInput === "boolean" &&
-    typeof capabilities.manualReply === "boolean" &&
-    (typeof capabilities.payloadLimitBytes === "number" || capabilities.payloadLimitBytes === null)
-  );
-}
-
-function isTutorPolicy(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  const policy = value as Record<string, unknown>;
-
-  return (
-    typeof policy.agentName === "string" &&
-    typeof policy.defaultImagePrompt === "string" &&
-    typeof policy.greetingInstructions === "string" &&
-    typeof policy.imageResponseInstructions === "string" &&
-    typeof policy.instructions === "string"
-  );
 }
 
 async function startSession(options: StartSessionOptions = {}): Promise<TutorSessionState> {
