@@ -12,6 +12,8 @@ type SessionState = {
   ready: Promise<void>;
 };
 
+type StatusTone = "ready" | "working" | "connected" | "error";
+
 type StartSessionOptions = {
   greet?: boolean;
 };
@@ -75,8 +77,9 @@ function getElement<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
-function setStatus(message: string): void {
+function setStatus(message: string, tone: StatusTone = "ready"): void {
   statusText.textContent = message;
+  statusText.dataset.tone = tone;
 }
 
 function logEvent(message: string, value?: unknown): void {
@@ -185,7 +188,7 @@ async function startSession(options: StartSessionOptions = {}): Promise<SessionS
 async function createSession(greetOnOpen: boolean): Promise<SessionState> {
 
   setRunning(true);
-  setStatus("Requesting microphone access...");
+  setStatus("Requesting microphone access...", "working");
 
   let pendingSession: SessionState | undefined;
 
@@ -208,7 +211,7 @@ async function createSession(greetOnOpen: boolean): Promise<SessionState> {
     }
 
     dataChannel.addEventListener("open", () => {
-      setStatus("Connected. Ask your tutor out loud.");
+      setStatus("Connected. Ask your tutor out loud.", "connected");
       logEvent("Data channel opened");
       updateImageControls();
       if (!greetOnOpen) {
@@ -266,13 +269,13 @@ async function createSession(greetOnOpen: boolean): Promise<SessionState> {
       sdp: await sdpResponse.text()
     });
 
-    setStatus("Connecting...");
+    setStatus("Connecting...", "working");
     return pendingSession;
   } catch (error) {
     cleanupSession(pendingSession);
     session = undefined;
     setRunning(false);
-    setStatus(error instanceof Error ? error.message : "Failed to start session.");
+    setStatus(error instanceof Error ? error.message : "Failed to start session.", "error");
     logEvent("Start failed", error instanceof Error ? error.message : error);
     throw error;
   }
@@ -649,12 +652,12 @@ async function ensureSessionReadyForImage(): Promise<SessionState> {
   }
 
   if (activeSession && activeSession.dataChannel.readyState !== "closed") {
-    setStatus("Connecting before sharing the problem image...");
+    setStatus("Connecting before sharing the problem image...", "working");
     await activeSession.ready;
     return activeSession;
   }
 
-  setStatus("Starting tutoring before sharing the problem image...");
+  setStatus("Starting tutoring before sharing the problem image...", "working");
   const startedSession = await startSession({ greet: false });
   await startedSession.ready;
   return startedSession;
@@ -689,7 +692,7 @@ async function sendImage(): Promise<void> {
       })
     );
 
-    setStatus("Problem image sent. Waiting for your tutor...");
+    setStatus("Problem image sent. Waiting for your tutor...", "working");
     imageMeta.textContent = describePreparedImage(image);
     logEvent("Problem image sent", {
       bytes: image.size,
@@ -705,7 +708,7 @@ async function sendImage(): Promise<void> {
 
 startButton.addEventListener("click", () => {
   startSession().catch((error: unknown) => {
-    setStatus(error instanceof Error ? error.message : "Unexpected error.");
+    setStatus(error instanceof Error ? error.message : "Unexpected error.", "error");
   });
 });
 
@@ -729,7 +732,7 @@ imageForm.addEventListener("submit", (event) => {
 
   sendImage().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : "Could not send the problem image.";
-    setStatus(message);
+    setStatus(message, "error");
     imageMeta.textContent = message;
     logEvent("Problem image send failed", error instanceof Error ? error.message : error);
   });
