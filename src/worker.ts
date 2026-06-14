@@ -1,9 +1,6 @@
 import { HttpError, type JsonValue } from "./http-error.js";
-import {
-  createVoiceSessionService,
-  parseCreateVoiceSessionRequest,
-  type VoiceSessionServiceEnv
-} from "./voice-session-service.js";
+import { createVoiceSession } from "./voice-session-handler.js";
+import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { voiceSessionPath } from "./voice-types.js";
 
 const maxVoiceSessionRequestBytes = 16_384;
@@ -43,9 +40,9 @@ async function handleVoiceSessionRequest(request: Request, env: Env, url: URL): 
   }
 
   try {
-    const body = parseCreateVoiceSessionRequest(await readJsonRequest(request));
-    const voiceSessionService = createVoiceSessionService(createVoiceSessionServiceEnv(env));
-    const descriptor = await voiceSessionService.createSession(body, { callerKey });
+    const descriptor = await createVoiceSession(await readJsonRequest(request), createVoiceSessionServiceEnv(env), {
+      callerKey
+    });
 
     return json(descriptor, 200, baseHeaders);
   } catch (error) {

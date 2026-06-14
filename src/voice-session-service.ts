@@ -54,19 +54,6 @@ export function createVoiceSessionService(env: VoiceSessionServiceEnv): VoiceSes
   return new LiveKitAgentsSessionService();
 }
 
-export function parseCreateVoiceSessionRequest(value: unknown): CreateVoiceSessionRequest {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new HttpError(400, "Voice session request must be a JSON object");
-  }
-
-  const intent = (value as { intent?: unknown }).intent;
-  if (intent !== "tutor") {
-    throw new HttpError(400, `Unsupported voice session intent: ${String(intent)}`);
-  }
-
-  return { intent };
-}
-
 function readVoiceBackend(value: string | undefined): VoiceBackend {
   if (!value) {
     return defaultVoiceBackend;

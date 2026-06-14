@@ -6,11 +6,8 @@ import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { HttpError, type JsonValue } from "./http-error.js";
-import {
-  createVoiceSessionService,
-  parseCreateVoiceSessionRequest,
-  type VoiceSessionServiceEnv
-} from "./voice-session-service.js";
+import { createVoiceSession } from "./voice-session-handler.js";
+import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { voiceSessionPath } from "./voice-types.js";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -145,9 +142,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       throw new HttpError(405, "Method not allowed");
     }
 
-    const body = parseCreateVoiceSessionRequest(await readJsonRequest<unknown>(req));
-    const voiceSessionService = createVoiceSessionService(createVoiceSessionServiceEnv());
-    const descriptor = await voiceSessionService.createSession(body);
+    const descriptor = await createVoiceSession(await readJsonRequest<unknown>(req), createVoiceSessionServiceEnv());
 
     sendJson(res, 200, descriptor);
     return;
