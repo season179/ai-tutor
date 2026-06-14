@@ -1,19 +1,28 @@
 import "dotenv/config";
 
-import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  createRealtimeClientSecret,
+  defaultRealtimeModel,
+  defaultRealtimeVoice,
+  defaultSafetyIdentifier,
+  HttpError,
+  tutorInstructions,
+  type JsonValue
+} from "./realtime-token.js";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const publicDir = join(rootDir, "public");
 
 const port = readPort(process.env.PORT);
 const host = process.env.HOST;
-const model = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2";
-const voice = process.env.OPENAI_REALTIME_VOICE ?? "marin";
-const safetyIdentifier = hashSafetyIdentifier(process.env.OPENAI_SAFETY_IDENTIFIER ?? "local-ai-tutor-user");
+const model = process.env.OPENAI_REALTIME_MODEL ?? defaultRealtimeModel;
+const voice = process.env.OPENAI_REALTIME_VOICE ?? defaultRealtimeVoice;
+const safetyIdentifierSeed = process.env.OPENAI_SAFETY_IDENTIFIER ?? defaultSafetyIdentifier;
 
 const mimeTypes = new Map<string, string>([
   [".css", "text/css; charset=utf-8"],
@@ -22,24 +31,6 @@ const mimeTypes = new Map<string, string>([
   [".json", "application/json; charset=utf-8"],
   [".map", "application/json; charset=utf-8"]
 ]);
-
-type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly payload?: JsonValue
-  ) {
-    super(message);
-  }
-}
 
 function readPort(value: string | undefined): number {
   if (value === undefined || value === "") {
@@ -57,10 +48,6 @@ function readPort(value: string | undefined): number {
   }
 
   return parsed;
-}
-
-function hashSafetyIdentifier(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function sendJson(
@@ -114,52 +101,6 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL):
   res.end(body);
 }
 
-async function createRealtimeClientSecret(): Promise<JsonValue> {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    throw new HttpError(500, "Missing OPENAI_API_KEY");
-  }
-
-  const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
-    method: "POST",
-    signal: AbortSignal.timeout(15_000),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "OpenAI-Safety-Identifier": safetyIdentifier
-    },
-    body: JSON.stringify({
-      session: {
-        type: "realtime",
-        model,
-        instructions:
-          "You are AI Tutor, a patient realtime voice tutor. Help students reason through homework step by step, ask a clarifying question when the goal is unclear, and guide learning instead of only giving final answers. Keep spoken replies concise unless the student asks for detail.",
-        audio: {
-          output: {
-            voice
-          }
-        }
-      }
-    })
-  });
-
-  const rawBody = await response.text();
-  let payload: JsonValue;
-
-  try {
-    payload = JSON.parse(rawBody) as JsonValue;
-  } catch {
-    payload = { error: rawBody };
-  }
-
-  if (!response.ok) {
-    throw new HttpError(response.status, "OpenAI client secret request failed", payload);
-  }
-
-  return payload;
-}
-
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
 
@@ -171,7 +112,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       throw new HttpError(405, "Method not allowed");
     }
 
-    const token = await createRealtimeClientSecret();
+    const token = await createRealtimeClientSecret({
+      apiKey: process.env.OPENAI_API_KEY,
+      instructions: tutorInstructions,
+      model,
+      safetyIdentifierSeed,
+      voice
+    });
     sendJson(res, 200, token);
     return;
   }

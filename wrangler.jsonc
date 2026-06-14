@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ai-tutor",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/token"]
+  },
+  "vars": {
+    "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
+    "OPENAI_REALTIME_VOICE": "marin",
+    "OPENAI_SAFETY_IDENTIFIER": "cloudflare-ai-tutor-user"
+  },
+  "secrets": {
+    "required": ["OPENAI_API_KEY"]
+  },
+  "ratelimits": [
+    {
+      "name": "REALTIME_TOKEN_RATE_LIMITER",
+      "namespace_id": "2026061401",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    }
+  }
+}
