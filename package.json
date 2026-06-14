@@ -1,0 +1,32 @@
+{
+  "name": "test-realtime-voice-model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "build": "pnpm build:client && tsc -p tsconfig.server.json",
+    "build:client": "tsc -p tsconfig.client.json",
+    "dev": "node scripts/dev.mjs",
+    "dev:app": "pnpm build && node dist/server.js",
+    "start": "node scripts/dev.mjs --script start:app",
+    "start:app": "pnpm build && node dist/server.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit"
+  },
+  "portless": {
+    "name": "realtime-voice",
+    "script": "dev:app"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "portless": "^0.14.0",
+    "typescript": "^5.9.3"
+  }
+}
