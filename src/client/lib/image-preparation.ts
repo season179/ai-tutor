@@ -25,6 +25,9 @@ const minImageLargestSide = 256;
 const initialJpegQuality = 0.88;
 const minJpegQuality = 0.62;
 const jpegQualityStep = 0.08;
+const preparedImageReadErrorMessage = "This browser could not read the prepared image.";
+
+export const preparedImageMimeType = "image/jpeg";
 
 function fitWithin(width: number, height: number, maxDimension: number): { height: number; width: number } {
   const largestSide = Math.max(width, height);
@@ -109,7 +112,7 @@ function renderJpeg(source: CanvasImageSource, width: number, height: number, qu
 
         resolve(blob);
       },
-      "image/jpeg",
+      preparedImageMimeType,
       quality
     );
   });
@@ -137,13 +140,13 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       if (typeof reader.result !== "string") {
-        reject(new Error("This browser could not read the prepared image."));
+        reject(new Error(preparedImageReadErrorMessage));
         return;
       }
 
       resolve(reader.result);
     });
-    reader.addEventListener("error", () => reject(new Error("This browser could not read the prepared image.")));
+    reader.addEventListener("error", () => reject(new Error(preparedImageReadErrorMessage)));
     reader.readAsDataURL(blob);
   });
 }
@@ -200,7 +203,7 @@ export async function prepareImage(file: File, targetBytes: number): Promise<Pre
 
 export function describePreparedImage(image: PreparedImage): string {
   const converted =
-    image.originalType === "image/jpeg" &&
+    image.originalType === preparedImageMimeType &&
     image.originalWidth === image.width &&
     image.originalHeight === image.height
       ? "JPEG"

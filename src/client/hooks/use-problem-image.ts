@@ -7,6 +7,7 @@ import { getImageByteLimit, getImageResizeByteLimit } from "../lib/image-byte-li
 import {
   describePreparedImage,
   prepareImage,
+  preparedImageMimeType,
   type PreparedImage
 } from "../lib/image-preparation.js";
 import { updateSession } from "../lib/session-api.js";
@@ -16,7 +17,6 @@ import { defaultImagePrompt } from "../types.js";
 const checkingImagePayloadMessage = "Checking image payload...";
 const chooseImageFirstMessage = "Choose an image first.";
 const noProblemImageMessage = "No problem image yet.";
-const preparedImageMimeType = "image/jpeg";
 const problemImagePreparationFailedEvent = "Problem image preparation failed";
 const preparingProblemImageMessage = "Preparing problem image...";
 
