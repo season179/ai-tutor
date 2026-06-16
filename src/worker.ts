@@ -31,7 +31,6 @@ function createSessionStore(env: Env): SessionStore {
 
 function createApiHandlerEnv(env: Env): ApiHandlerEnv {
   return {
-    DB: env.DB,
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     OPENAI_REALTIME_MODEL: env.OPENAI_REALTIME_MODEL,
     OPENAI_REALTIME_VOICE: env.OPENAI_REALTIME_VOICE,

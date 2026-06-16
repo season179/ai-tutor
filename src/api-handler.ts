@@ -1,5 +1,3 @@
-import type { D1Database } from "@cloudflare/workers-types";
-
 import { authenticateRequest, type AccessAuthEnv } from "./access-auth.js";
 import { HttpError, type JsonValue } from "./http-error.js";
 import type { SessionStore } from "./session-store.js";
@@ -10,10 +8,7 @@ import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { voiceSessionPath } from "./voice-types.js";
 import { readJsonBody } from "./session-handler.js";
 
-export type ApiHandlerEnv = AccessAuthEnv &
-  VoiceSessionServiceEnv & {
-    DB?: D1Database;
-  };
+export type ApiHandlerEnv = AccessAuthEnv & VoiceSessionServiceEnv;
 
 export type ApiHandlerOptions = {
   allowDevBypass?: boolean;
