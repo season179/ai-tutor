@@ -14,6 +14,7 @@ import {
   mapD1EventRow,
   mapD1SessionRow,
   nowIso,
+  rowStringOrNull,
   serializeImageMeta
 } from "./memory-session-store.js";
 
@@ -165,16 +166,12 @@ export class D1SessionStore implements SessionStore {
     const updatedAt = nowIso();
     const title = request.title !== undefined ? request.title.trim() : String(existing.title);
     const status = request.status ?? (existing.status as TutorSessionRecord["status"]);
-    const imagePrompt =
-      request.imagePrompt !== undefined ? request.imagePrompt : existing.image_prompt ? String(existing.image_prompt) : null;
-    const imageName =
-      request.imageName !== undefined ? request.imageName : existing.image_name ? String(existing.image_name) : null;
+    const imagePrompt = request.imagePrompt !== undefined ? request.imagePrompt : rowStringOrNull(existing.image_prompt);
+    const imageName = request.imageName !== undefined ? request.imageName : rowStringOrNull(existing.image_name);
     const imageMetaJson =
       request.imageMeta !== undefined
         ? serializeImageMeta(request.imageMeta)
-        : existing.image_meta_json
-          ? String(existing.image_meta_json)
-          : null;
+        : rowStringOrNull(existing.image_meta_json);
 
     await this.db
       .prepare(

@@ -30,6 +30,10 @@ function defaultTitle(createdAt: string): string {
   })}`;
 }
 
+function rowStringOrNull(value: unknown): string | null {
+  return value ? String(value) : null;
+}
+
 function parseImageMeta(value: string | null): SessionImageMeta | null {
   if (!value) {
     return null;
@@ -196,9 +200,9 @@ export function mapD1SessionRow(row: Record<string, unknown>): TutorSessionRecor
   return {
     createdAt: String(row.created_at),
     id: String(row.id),
-    imageMeta: parseImageMeta(row.image_meta_json ? String(row.image_meta_json) : null),
-    imageName: row.image_name ? String(row.image_name) : null,
-    imagePrompt: row.image_prompt ? String(row.image_prompt) : null,
+    imageMeta: parseImageMeta(rowStringOrNull(row.image_meta_json)),
+    imageName: rowStringOrNull(row.image_name),
+    imagePrompt: rowStringOrNull(row.image_prompt),
     ownerKey: String(row.owner_key),
     status: row.status as TutorSessionStatus,
     title: String(row.title),
@@ -225,4 +229,4 @@ export function mapD1EventRow(row: Record<string, unknown>): SessionEventRecord 
   };
 }
 
-export { defaultTitle, nowIso, parseImageMeta, serializeImageMeta };
+export { defaultTitle, nowIso, parseImageMeta, rowStringOrNull, serializeImageMeta };

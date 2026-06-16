@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MemorySessionStore } from "../dist/memory-session-store.js";
+import { mapD1SessionRow, MemorySessionStore } from "../dist/memory-session-store.js";
 
 test("MemorySessionStore scopes sessions by owner key", async () => {
   const store = new MemorySessionStore();
@@ -55,4 +55,22 @@ test("MemorySessionStore updates image metadata without storing data URLs", asyn
   assert.deepEqual(updated?.imageMeta, { bytes: 120_000, height: 900, width: 1200 });
   assert.equal(updated?.imageName, "worksheet.jpg");
   assert.equal(updated?.imagePrompt, "Walk me through this problem.");
+});
+
+test("mapD1SessionRow normalizes optional image columns", () => {
+  const session = mapD1SessionRow({
+    created_at: "2026-06-17T01:02:03.000Z",
+    id: "session-1",
+    image_meta_json: JSON.stringify({ bytes: 120_000, height: 900, width: 1200 }),
+    image_name: "",
+    image_prompt: "",
+    owner_key: "access:user-a",
+    status: "draft",
+    title: "Algebra help",
+    updated_at: "2026-06-17T01:02:03.000Z"
+  });
+
+  assert.deepEqual(session.imageMeta, { bytes: 120_000, height: 900, width: 1200 });
+  assert.equal(session.imageName, null);
+  assert.equal(session.imagePrompt, null);
 });
