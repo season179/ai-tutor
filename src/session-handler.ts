@@ -11,6 +11,18 @@ import { readLimitedTextBody } from "./read-limited-text.js";
 
 const maxRequestBytes = 16_384;
 
+function sessionNotFound(): HttpError {
+  return new HttpError(404, "Session not found");
+}
+
+function requireSessionResult<T>(value: T | null): T {
+  if (value === null) {
+    throw sessionNotFound();
+  }
+
+  return value;
+}
+
 export async function listSessions(context: RequestContext, store: SessionStore) {
   return store.listSessions(context.ownerKey);
 }
@@ -29,12 +41,7 @@ export async function getSession(
   context: RequestContext,
   store: SessionStore
 ) {
-  const detail = await store.getSession(context.ownerKey, sessionId);
-  if (!detail) {
-    throw new HttpError(404, "Session not found");
-  }
-
-  return detail;
+  return requireSessionResult(await store.getSession(context.ownerKey, sessionId));
 }
 
 export async function updateSession(
@@ -44,12 +51,7 @@ export async function updateSession(
   store: SessionStore
 ) {
   const request = parseUpdateTutorSessionRequest(body);
-  const updated = await store.updateSession(context.ownerKey, sessionId, request);
-  if (!updated) {
-    throw new HttpError(404, "Session not found");
-  }
-
-  return updated;
+  return requireSessionResult(await store.updateSession(context.ownerKey, sessionId, request));
 }
 
 export async function appendSessionEvent(
@@ -62,7 +64,7 @@ export async function appendSessionEvent(
   try {
     return await store.appendEvent(context.ownerKey, sessionId, request);
   } catch {
-    throw new HttpError(404, "Session not found");
+    throw sessionNotFound();
   }
 }
 
