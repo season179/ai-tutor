@@ -62,6 +62,27 @@ function toLoadedSessionContext(
   };
 }
 
+function readStoredActiveSessionId(): string | undefined {
+  if (typeof sessionStorage === "undefined") {
+    return undefined;
+  }
+
+  return sessionStorage.getItem(activeSessionStorageKey) ?? undefined;
+}
+
+function writeStoredActiveSessionId(sessionId: string | undefined): void {
+  if (typeof sessionStorage === "undefined") {
+    return;
+  }
+
+  if (sessionId) {
+    sessionStorage.setItem(activeSessionStorageKey, sessionId);
+    return;
+  }
+
+  sessionStorage.removeItem(activeSessionStorageKey);
+}
+
 export function useTutorSessions({
   clearEventLog,
   getIsVoiceRunning,
@@ -87,13 +108,7 @@ export function useTutorSessions({
   notifyEventLogged: () => void;
 } {
   const [sessions, setSessions] = useState<TutorSessionSummary[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => {
-    if (typeof sessionStorage === "undefined") {
-      return undefined;
-    }
-
-    return sessionStorage.getItem(activeSessionStorageKey) ?? undefined;
-  });
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(readStoredActiveSessionId);
   const [isLoading, setIsLoading] = useState(true);
   const [isHydrating, setIsHydrating] = useState(true);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -103,17 +118,7 @@ export function useTutorSessions({
 
   const persistActiveSessionId = useCallback((sessionId: string | undefined) => {
     setActiveSessionId(sessionId);
-
-    if (typeof sessionStorage === "undefined") {
-      return;
-    }
-
-    if (sessionId) {
-      sessionStorage.setItem(activeSessionStorageKey, sessionId);
-      return;
-    }
-
-    sessionStorage.removeItem(activeSessionStorageKey);
+    writeStoredActiveSessionId(sessionId);
   }, []);
 
   const notifyEventLogged = useCallback(() => {
@@ -257,9 +262,7 @@ export function useTutorSessions({
           return;
         }
 
-        const storedId = typeof sessionStorage !== "undefined"
-          ? sessionStorage.getItem(activeSessionStorageKey)
-          : null;
+        const storedId = readStoredActiveSessionId();
         const targetId =
           storedId && nextSessions.some((session) => session.id === storedId)
             ? storedId
