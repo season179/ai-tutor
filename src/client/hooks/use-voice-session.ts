@@ -73,11 +73,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     setStatus(readyStatusMessage);
   }, [setStatus]);
 
-  const cleanupSessionResources = useCallback((activeSession: TutorSessionState | undefined) => {
-    if (!activeSession) {
-      return;
-    }
-
+  const cleanupSessionResources = useCallback((activeSession: TutorSessionState) => {
     activeSession.mediaStream.getTracks().forEach((track) => track.stop());
 
     if (audioRef.current) {
