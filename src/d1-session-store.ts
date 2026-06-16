@@ -153,7 +153,8 @@ export class D1SessionStore implements SessionStore {
       return null;
     }
 
-    const updated = applyTutorSessionUpdate(mapD1SessionRow(existing), request, nowIso());
+    const existingSession = mapD1SessionRow(existing);
+    const updated = applyTutorSessionUpdate(existingSession, request, nowIso());
     const imageMetaJson =
       request.imageMeta !== undefined
         ? serializeImageMeta(updated.imageMeta)
@@ -177,15 +178,7 @@ export class D1SessionStore implements SessionStore {
       )
       .run();
 
-    return mapD1SessionRow({
-      ...existing,
-      image_meta_json: imageMetaJson,
-      image_name: updated.imageName,
-      image_prompt: updated.imagePrompt,
-      status: updated.status,
-      title: updated.title,
-      updated_at: updated.updatedAt
-    });
+    return updated;
   }
 
   private async getOwnedSessionRow(
