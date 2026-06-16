@@ -12,6 +12,7 @@ import { MemorySessionStore } from "./memory-session-store.js";
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const publicDir = join(rootDir, "public");
 const sessionStore = new MemorySessionStore();
+const maxPort = 65_535;
 
 const port = readPort(process.env.PORT);
 const host = process.env.HOST;
@@ -29,17 +30,14 @@ function readPort(value: string | undefined): number {
     return 0;
   }
 
-  if (!/^\d+$/.test(value)) {
-    throw new Error(`Invalid PORT value: ${value}`);
+  if (/^\d+$/.test(value)) {
+    const parsed = Number.parseInt(value, 10);
+    if (parsed <= maxPort) {
+      return parsed;
+    }
   }
 
-  const parsed = Number.parseInt(value, 10);
-
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65_535) {
-    throw new Error(`Invalid PORT value: ${value}`);
-  }
-
-  return parsed;
+  throw new Error(`Invalid PORT value: ${value}`);
 }
 
 function sendJson(
