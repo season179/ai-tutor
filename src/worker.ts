@@ -1,6 +1,5 @@
 import { createApiHandlerEnv, handleApiRequest } from "./api-handler.js";
 import { D1SessionStore } from "./d1-session-store.js";
-import type { SessionStore } from "./session-store.js";
 import { voiceSessionPath } from "./voice-types.js";
 
 export default {
@@ -14,7 +13,7 @@ export default {
       }
     }
 
-    const store = createSessionStore(env);
+    const store = new D1SessionStore(env.DB);
     const apiResponse = await handleApiRequest(request, createApiHandlerEnv(env), { store });
 
     if (apiResponse) {
@@ -24,10 +23,6 @@ export default {
     return env.ASSETS.fetch(request);
   }
 } satisfies ExportedHandler<Env>;
-
-function createSessionStore(env: Env): SessionStore {
-  return new D1SessionStore(env.DB);
-}
 
 async function limitVoiceSessionRequest(env: Env, key: string): Promise<Response | undefined> {
   const limiter = env.REALTIME_TOKEN_RATE_LIMITER;
