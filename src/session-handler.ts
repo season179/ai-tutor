@@ -7,6 +7,7 @@ import {
 import type { SessionStore } from "./session-store.js";
 import { sessionsPath } from "./session-types.js";
 import type { RequestContext } from "./request-context.js";
+import { readLimitedTextBody } from "./read-limited-text.js";
 
 const maxRequestBytes = 16_384;
 
@@ -94,35 +95,14 @@ export function parseSessionRoute(pathname: string):
 }
 
 export async function readJsonBody(request: Request, maxBytes = maxRequestBytes): Promise<unknown> {
-  const reader = request.body?.getReader();
+  const text = await readLimitedTextBody(
+    request.body,
+    maxBytes,
+    () => new HttpError(413, "Request body was too large")
+  );
 
-  if (!reader) {
+  if (text === null) {
     return null;
-  }
-
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let text = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        text += decoder.decode();
-        break;
-      }
-
-      bytesRead += value.byteLength;
-      if (bytesRead > maxBytes) {
-        await reader.cancel();
-        throw new HttpError(413, "Request body was too large");
-      }
-
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.releaseLock();
   }
 
   if (!text) {

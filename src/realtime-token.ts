@@ -1,4 +1,5 @@
 import { HttpError, type JsonValue } from "./http-error.js";
+import { readLimitedTextBody } from "./read-limited-text.js";
 
 export type RealtimeClientSecretOptions = {
   apiKey: string | undefined;
@@ -44,7 +45,12 @@ export async function createRealtimeClientSecret(options: RealtimeClientSecretOp
     })
   });
 
-  const rawBody = await readResponseText(response, maxOpenAiResponseBytes);
+  const rawBody =
+    (await readLimitedTextBody(
+      response.body,
+      maxOpenAiResponseBytes,
+      () => new HttpError(502, "OpenAI response was too large")
+    )) ?? "";
   let payload: JsonValue;
 
   try {
@@ -65,36 +71,4 @@ async function hashSafetyIdentifier(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", data);
 
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function readResponseText(response: Response, maxBytes: number): Promise<string> {
-  const reader = response.body?.getReader();
-
-  if (!reader) {
-    return "";
-  }
-
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let text = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        return text + decoder.decode();
-      }
-
-      bytesRead += value.byteLength;
-      if (bytesRead > maxBytes) {
-        await reader.cancel();
-        throw new HttpError(502, "OpenAI response was too large");
-      }
-
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
