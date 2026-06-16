@@ -15,8 +15,10 @@ import type { LoadedSessionContext, StatusTone, TutorSessionState } from "../typ
 import { defaultImagePrompt } from "../types.js";
 
 const checkingImagePayloadMessage = "Checking image payload...";
+const chooseImageFirstMessage = "Choose an image first.";
 const noProblemImageMessage = "No problem image yet.";
 const preparedImageMimeType = "image/jpeg";
+const problemImagePreparationFailedEvent = "Problem image preparation failed";
 const preparingProblemImageMessage = "Preparing problem image...";
 
 type UseProblemImageOptions = {
@@ -176,7 +178,7 @@ export function useProblemImage({
         }
 
         clearPreparedImage(errorMessage(error, "Could not prepare the problem image."));
-        logEvent("Problem image preparation failed", errorLogValue(error));
+        logEvent(problemImagePreparationFailedEvent, errorLogValue(error));
       } finally {
         if (preparationId === imagePreparationIdRef.current) {
           setIsPreparingImage(false);
@@ -195,7 +197,7 @@ export function useProblemImage({
       }
 
       prepareSelectedImage(file).catch((error: unknown) => {
-        logEvent("Problem image preparation failed", errorLogValue(error));
+        logEvent(problemImagePreparationFailedEvent, errorLogValue(error));
       });
     },
     [clearPreparedImage, imagePrompt, logEvent, persistImageContext, prepareSelectedImage]
@@ -219,7 +221,7 @@ export function useProblemImage({
   const getSendableImage = useCallback(
     async (prompt: string): Promise<PreparedImage> => {
       if (!preparedImage) {
-        throw new Error("Choose an image first.");
+        throw new Error(chooseImageFirstMessage);
       }
 
       const messageLimit = getPayloadLimitBytes();
@@ -255,7 +257,7 @@ export function useProblemImage({
 
   const sendImage = useCallback(async () => {
     if (!preparedImage) {
-      throw new Error("Choose an image first.");
+      throw new Error(chooseImageFirstMessage);
     }
 
     setIsPreparingImage(true);
