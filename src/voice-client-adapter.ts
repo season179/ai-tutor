@@ -17,8 +17,8 @@ export type VoiceClientAdapterStatus = "idle" | "connecting" | "connected" | "di
 
 export type VoiceClientEvent =
   | { type: "connecting" }
-  | { detail?: unknown; type: "connected" }
-  | { detail?: unknown; type: "disconnected" }
+  | { type: "connected" }
+  | { type: "disconnected" }
   | { type: "reply_started" }
   | { type: "reply_finished" }
   | { error: unknown; type: "error" }
@@ -137,14 +137,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
     try {
       await realtimeSession.connect({ apiKey: session.clientSecret });
       this.status = "connected";
-      this.emit({
-        detail: {
-          model: session.model,
-          provider: session.provider,
-          voice: session.voice
-        },
-        type: "connected"
-      });
+      this.emit({ type: "connected" });
     } catch (error) {
       this.status = "disconnected";
       this.emit({ error, type: "error" });
@@ -215,7 +208,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
       }
 
       this.status = "disconnected";
-      this.emit({ detail: { provider: "openai-realtime" }, type: "disconnected" });
+      this.emit({ type: "disconnected" });
     });
 
     transport.on("*", (event: TransportEvent) => {
