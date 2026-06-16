@@ -19,6 +19,9 @@ import {
   serializeImageMeta
 } from "./memory-session-store.js";
 
+const tutorSessionColumns =
+  "id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at";
+
 export class D1SessionStore implements SessionStore {
   constructor(private readonly db: D1Database) {}
 
@@ -73,9 +76,8 @@ export class D1SessionStore implements SessionStore {
 
     await this.db
       .prepare(
-        `INSERT INTO tutor_sessions (
-          id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO tutor_sessions (${tutorSessionColumns})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         session.id,
@@ -121,7 +123,7 @@ export class D1SessionStore implements SessionStore {
   async listSessions(ownerKey: string): Promise<TutorSessionSummary[]> {
     const result = await this.db
       .prepare(
-        `SELECT id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
+        `SELECT ${tutorSessionColumns}
          FROM tutor_sessions
          WHERE owner_key = ?
          ORDER BY updated_at DESC`
@@ -190,7 +192,7 @@ export class D1SessionStore implements SessionStore {
   ): Promise<Record<string, unknown> | null> {
     const row = await this.db
       .prepare(
-        `SELECT id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
+        `SELECT ${tutorSessionColumns}
          FROM tutor_sessions
          WHERE id = ? AND owner_key = ?`
       )
