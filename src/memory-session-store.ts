@@ -175,18 +175,8 @@ export class MemorySessionStore implements SessionStore {
     return session && session.ownerKey === ownerKey ? session : null;
   }
 
-  private toRecord(session: StoredSession): TutorSessionRecord {
-    return {
-      createdAt: session.createdAt,
-      id: session.id,
-      imageMeta: session.imageMeta,
-      imageName: session.imageName,
-      imagePrompt: session.imagePrompt,
-      ownerKey: session.ownerKey,
-      status: session.status,
-      title: session.title,
-      updatedAt: session.updatedAt
-    };
+  private toRecord({ events: _events, ...session }: StoredSession): TutorSessionRecord {
+    return session;
   }
 }
 
