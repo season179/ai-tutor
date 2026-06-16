@@ -11,10 +11,6 @@ import { readLimitedTextBody } from "./read-limited-text.js";
 
 export const maxJsonRequestBodyBytes = 16_384;
 
-function methodNotAllowed(): HttpError {
-  return new HttpError(405, "Method not allowed");
-}
-
 function requireSessionResult<T>(value: T | null): T {
   if (value === null) {
     throw sessionNotFoundHttpError();
@@ -155,5 +151,5 @@ export async function handleSessionsRequest(
       }
   }
 
-  throw methodNotAllowed();
+  throw new HttpError(405, "Method not allowed");
 }
