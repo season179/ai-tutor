@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { TutorSessionSummary } from "../../session-types.js";
+import { formatEventEntry } from "../lib/format-event-entry.js";
 import {
   createSession,
   getSession,
@@ -24,12 +25,6 @@ type UseTutorSessionsOptions = {
   setStatus: (message: string, tone?: StatusTone) => void;
   stopVoiceSession: () => void;
 };
-
-function formatEventEntry(createdAt: string, message: string, value: unknown): string {
-  const time = new Date(createdAt).toLocaleTimeString();
-  const renderedValue = value === null || value === undefined ? "" : ` ${JSON.stringify(value, null, 2)}`;
-  return `[${time}] ${message}${renderedValue}`;
-}
 
 function toSessionListError(error: unknown): SessionListError {
   if (error instanceof SessionApiError) {
@@ -114,7 +109,7 @@ export function useTutorSessions({
     async (sessionId: string) => {
       const detail = await getSession(sessionId);
       const entries = detail.events.map((event) =>
-        formatEventEntry(event.createdAt, event.message, event.value)
+        formatEventEntry(event.createdAt, event.message, event.value, { omitNullValue: true })
       );
 
       setEventCount(detail.events.length);
