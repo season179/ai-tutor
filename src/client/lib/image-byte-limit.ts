@@ -13,11 +13,7 @@ export function getImageResizeByteLimit(realtimeMessageLimit: number): number {
 }
 
 export function getImageByteLimit(realtimeMessageLimit: number | undefined): number {
-  if (!realtimeMessageLimit) {
-    return defaultImageByteLimit;
-  }
-
-  const imageBudget = getRealtimeImageBudget(realtimeMessageLimit);
+  const imageBudget = realtimeMessageLimit ? getRealtimeImageBudget(realtimeMessageLimit) : 0;
 
   if (imageBudget <= 0) {
     return defaultImageByteLimit;
