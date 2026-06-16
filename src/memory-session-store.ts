@@ -69,6 +69,25 @@ function toSessionSummary(session: TutorSessionRecord): TutorSessionSummary {
   };
 }
 
+function createTutorSessionRecord(
+  ownerKey: string,
+  request: CreateTutorSessionRequest,
+  createdAt: string,
+  id: string
+): TutorSessionRecord {
+  return {
+    createdAt,
+    id,
+    imageMeta: null,
+    imageName: null,
+    imagePrompt: null,
+    ownerKey,
+    status: "draft",
+    title: request.title?.trim() || defaultTitle(createdAt),
+    updatedAt: createdAt
+  };
+}
+
 function createSessionEventRecord(
   sessionId: string,
   id: number,
@@ -107,16 +126,8 @@ export class MemorySessionStore implements SessionStore {
   async createSession(ownerKey: string, request: CreateTutorSessionRequest = {}): Promise<TutorSessionRecord> {
     const createdAt = nowIso();
     const session: StoredSession = {
-      createdAt,
       events: [],
-      id: crypto.randomUUID(),
-      imageMeta: null,
-      imageName: null,
-      imagePrompt: null,
-      ownerKey,
-      status: "draft",
-      title: request.title?.trim() || defaultTitle(createdAt),
-      updatedAt: createdAt
+      ...createTutorSessionRecord(ownerKey, request, createdAt, crypto.randomUUID())
     };
 
     this.sessions.set(session.id, session);
@@ -240,7 +251,7 @@ export function mapD1EventRow(row: Record<string, unknown>): SessionEventRecord 
 
 export {
   createSessionEventRecord,
-  defaultTitle,
+  createTutorSessionRecord,
   nowIso,
   parseImageMeta,
   rowStringOrNull,

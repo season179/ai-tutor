@@ -11,7 +11,7 @@ import { maxSessionEvents } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createSessionEventRecord,
-  defaultTitle,
+  createTutorSessionRecord,
   mapD1EventRow,
   mapD1SessionRow,
   nowIso,
@@ -70,30 +70,28 @@ export class D1SessionStore implements SessionStore {
   }
 
   async createSession(ownerKey: string, request: CreateTutorSessionRequest = {}): Promise<TutorSessionRecord> {
-    const createdAt = nowIso();
-    const id = crypto.randomUUID();
-    const title = request.title?.trim() || defaultTitle(createdAt);
+    const session = createTutorSessionRecord(ownerKey, request, nowIso(), crypto.randomUUID());
 
     await this.db
       .prepare(
         `INSERT INTO tutor_sessions (
           id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
-        ) VALUES (?, ?, ?, 'draft', NULL, NULL, NULL, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .bind(id, ownerKey, title, createdAt, createdAt)
+      .bind(
+        session.id,
+        session.ownerKey,
+        session.title,
+        session.status,
+        session.imagePrompt,
+        session.imageName,
+        serializeImageMeta(session.imageMeta),
+        session.createdAt,
+        session.updatedAt
+      )
       .run();
 
-    return {
-      createdAt,
-      id,
-      imageMeta: null,
-      imageName: null,
-      imagePrompt: null,
-      ownerKey,
-      status: "draft",
-      title,
-      updatedAt: createdAt
-    };
+    return session;
   }
 
   async getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null> {
