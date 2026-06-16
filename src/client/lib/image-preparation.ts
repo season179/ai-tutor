@@ -118,6 +118,23 @@ function renderJpeg(source: CanvasImageSource, width: number, height: number, qu
   });
 }
 
+async function renderJpegWithinQualityBudget(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  targetBytes: number
+): Promise<{ blob: Blob; quality: number }> {
+  let quality = initialJpegQuality;
+  let blob = await renderJpeg(source, width, height, quality);
+
+  while (blob.size > targetBytes && quality > minJpegQuality) {
+    quality = Math.max(minJpegQuality, quality - jpegQualityStep);
+    blob = await renderJpeg(source, width, height, quality);
+  }
+
+  return { blob, quality };
+}
+
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -139,25 +156,15 @@ async function encodeJpegWithinBudget(
   targetBytes: number
 ): Promise<{ blob: Blob; height: number; quality: number; width: number }> {
   let { width, height } = fitWithin(decoded.width, decoded.height, maxImageDimension);
-  let quality = initialJpegQuality;
-  let blob = await renderJpeg(decoded.source, width, height, quality);
-
-  while (blob.size > targetBytes && quality > minJpegQuality) {
-    quality = Math.max(minJpegQuality, quality - jpegQualityStep);
-    blob = await renderJpeg(decoded.source, width, height, quality);
-  }
+  let { blob, quality } = await renderJpegWithinQualityBudget(decoded.source, width, height, targetBytes);
 
   while (blob.size > targetBytes && Math.max(width, height) > minImageLargestSide) {
     const scale = Math.max(0.5, Math.sqrt(targetBytes / blob.size) * 0.94);
     width = Math.max(1, Math.round(width * scale));
     height = Math.max(1, Math.round(height * scale));
-    quality = initialJpegQuality;
-    blob = await renderJpeg(decoded.source, width, height, quality);
-
-    while (blob.size > targetBytes && quality > minJpegQuality) {
-      quality = Math.max(minJpegQuality, quality - jpegQualityStep);
-      blob = await renderJpeg(decoded.source, width, height, quality);
-    }
+    const encoded = await renderJpegWithinQualityBudget(decoded.source, width, height, targetBytes);
+    blob = encoded.blob;
+    quality = encoded.quality;
   }
 
   if (blob.size > targetBytes) {
