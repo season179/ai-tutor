@@ -14,6 +14,10 @@ type StartSessionOptions = {
   greet?: boolean;
 };
 
+const connectedStatusMessage = "Connected. Ask your tutor out loud.";
+const readyStatusMessage = "Ready when you are.";
+const startCancelledMessage = "Voice session start cancelled.";
+
 type UseVoiceSessionOptions = {
   audioRef: RefObject<HTMLAudioElement | null>;
   logEvent: (message: string, value?: unknown, persistSessionId?: string) => void;
@@ -47,7 +51,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   stopSession: () => void;
 } {
   const [status, setStatusState] = useState<AppStatus>({
-    message: "Ready when you are.",
+    message: readyStatusMessage,
     tone: "ready"
   });
   const [isRunning, setIsRunning] = useState(false);
@@ -65,7 +69,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
 
   const setReadyStatus = useCallback(() => {
     setIsRunning(false);
-    setStatus("Ready when you are.");
+    setStatus(readyStatusMessage);
   }, [setStatus]);
 
   const cleanupSessionResources = useCallback((activeSession: TutorSessionState | undefined) => {
@@ -141,7 +145,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
             return;
           case "reply_finished":
             if (sessionRef.current === activeSession) {
-              setStatus("Connected. Ask your tutor out loud.", "connected");
+              setStatus(connectedStatusMessage, "connected");
             }
             return;
           case "error": {
@@ -167,7 +171,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
 
       const assertNotCancelled = () => {
         if (generation !== startGenerationRef.current) {
-          throw new Error("Voice session start cancelled.");
+          throw new Error(startCancelledMessage);
         }
       };
 
@@ -204,7 +208,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         setStatus("Connecting...", "working");
         await adapter.connect(descriptor);
         assertNotCancelled();
-        setStatus("Connected. Ask your tutor out loud.", "connected");
+        setStatus(connectedStatusMessage, "connected");
         logEvent("Voice session connected", describeVoiceSession(descriptor));
 
         if (greetOnOpen) {
@@ -217,7 +221,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         sessionRef.current = undefined;
         setIsRunning(false);
 
-        if (error instanceof Error && error.message === "Voice session start cancelled.") {
+        if (error instanceof Error && error.message === startCancelledMessage) {
           setReadyStatus();
           throw error;
         }
