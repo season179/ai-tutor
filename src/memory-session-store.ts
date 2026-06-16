@@ -9,6 +9,7 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
+import { isJsonObject } from "./schema-parser.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
 import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
 
@@ -48,7 +49,7 @@ function parseJsonOrNull(value: string | null): unknown {
 
 function parseImageMeta(value: string | null): SessionImageMeta | null {
   const parsed = parseJsonOrNull(value);
-  if (!parsed || typeof parsed !== "object") {
+  if (!isJsonObject(parsed)) {
     return null;
   }
 

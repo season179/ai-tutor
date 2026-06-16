@@ -5,6 +5,7 @@ import {
   defaultRealtimeVoice,
   defaultSafetyIdentifier
 } from "./realtime-token.js";
+import { isJsonObject } from "./schema-parser.js";
 import { tutorPolicy } from "./tutor-policy.js";
 import { serializeOpenAIRealtimeSessionDescriptor } from "./voice-session-schema.js";
 import type {
@@ -150,11 +151,7 @@ function readOpenAISession(payload: JsonValue): Record<string, JsonValue> {
 }
 
 function asRecord(value: JsonValue | undefined): Record<string, JsonValue> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  return value;
+  return isJsonObject(value) ? (value as Record<string, JsonValue>) : {};
 }
 
 function asString(value: JsonValue | undefined): string | undefined {
