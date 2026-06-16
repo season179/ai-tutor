@@ -27,13 +27,24 @@ export function parseDevIdentity(value: string | undefined): AccessIdentity | un
       return undefined;
     }
 
-    return {
-      sub: parsed.sub.trim(),
-      ...(typeof parsed.email === "string" && parsed.email ? { email: parsed.email } : {})
-    };
+    return createAccessIdentity(parsed.sub.trim(), parsed.email);
   } catch {
     return undefined;
   }
+}
+
+function createAccessIdentity(sub: string, email: unknown): AccessIdentity {
+  return {
+    sub,
+    ...(typeof email === "string" && email ? { email } : {})
+  };
+}
+
+function createRequestContext(identity: AccessIdentity): RequestContext {
+  return {
+    identity,
+    ownerKey: buildOwnerKey(identity.sub)
+  };
 }
 
 function normalizeTeamDomain(teamDomain: string): string {
@@ -65,12 +76,7 @@ export async function verifyAccessJwt(
       throw new HttpError(403, "Unauthorized");
     }
 
-    const email = typeof payload.email === "string" && payload.email ? payload.email : undefined;
-
-    return {
-      sub,
-      ...(email ? { email } : {})
-    };
+    return createAccessIdentity(sub, payload.email);
   } catch (error) {
     if (error instanceof HttpError) {
       throw error;
@@ -89,19 +95,13 @@ export async function authenticateRequest(
 
   if (token) {
     const identity = await verifyAccessJwt(token, env);
-    return {
-      identity,
-      ownerKey: buildOwnerKey(identity.sub)
-    };
+    return createRequestContext(identity);
   }
 
   if (options.allowDevBypass) {
     const identity = parseDevIdentity(env.ACCESS_DEV_IDENTITY);
     if (identity) {
-      return {
-        identity,
-        ownerKey: buildOwnerKey(identity.sub)
-      };
+      return createRequestContext(identity);
     }
   }
 
