@@ -83,6 +83,7 @@ class OpenAIRealtimeSessionService implements VoiceSessionService {
       safetyIdentifierSeed: this.createSafetyIdentifierSeed(context.callerKey),
       voice: this.options.voice
     });
+    const session = readOpenAISession(payload);
 
     return serializeOpenAIRealtimeSessionDescriptor({
       capabilities: {
@@ -93,11 +94,11 @@ class OpenAIRealtimeSessionService implements VoiceSessionService {
         payloadLimitBytes: null
       },
       clientSecret: readOpenAIClientSecret(payload),
-      model: readOpenAISessionString(payload, "model") ?? this.options.model,
+      model: asString(session.model) ?? this.options.model,
       provider: "openai-realtime",
       sessionId: context.sessionId ?? crypto.randomUUID(),
       tutorPolicy,
-      voice: readOpenAISessionVoice(payload) ?? this.options.voice
+      voice: readOpenAISessionVoice(session) ?? this.options.voice
     });
   }
 
@@ -137,12 +138,7 @@ function readOpenAIClientSecret(payload: JsonValue): string {
   return secret;
 }
 
-function readOpenAISessionString(payload: JsonValue, key: string): string | undefined {
-  return asString(readOpenAISession(payload)[key]);
-}
-
-function readOpenAISessionVoice(payload: JsonValue): string | undefined {
-  const session = readOpenAISession(payload);
+function readOpenAISessionVoice(session: Record<string, JsonValue>): string | undefined {
   const audio = asRecord(session.audio);
   const output = asRecord(audio.output);
 
