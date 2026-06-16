@@ -91,6 +91,17 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     [cleanupSessionResources]
   );
 
+  const markCurrentSessionEnded = useCallback(() => {
+    const activeSessionId = sessionIdRef.current;
+    if (!activeSessionId) {
+      return;
+    }
+
+    void updateSession(activeSessionId, { status: "ended" }).catch(() => {
+      // Status sync failures should not block local cleanup.
+    });
+  }, []);
+
   const wireSessionEvents = useCallback(
     (activeSession: TutorSessionState): (() => void) =>
       activeSession.adapter.onEvent((event: VoiceClientEvent) => {
@@ -115,13 +126,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
 
           if (!isStoppingSessionRef.current) {
             setStatus("Session disconnected.", "ready");
-
-            const activeSessionId = sessionIdRef.current;
-            if (activeSessionId) {
-              void updateSession(activeSessionId, { status: "ended" }).catch(() => {
-                // Status sync failures should not block local cleanup.
-              });
-            }
+            markCurrentSessionEnded();
           }
 
           return;
@@ -145,7 +150,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
           logEvent("Voice session error", error instanceof Error ? error.message : error);
         }
       }),
-    [cleanupSessionResources, logEvent, setStatus]
+    [cleanupSessionResources, logEvent, markCurrentSessionEnded, setStatus]
   );
 
   const fetchVoiceSessionDescriptor = useCallback(async (): Promise<VoiceSessionDescriptor> => {
@@ -295,17 +300,11 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
       setIsRunning(false);
       setStatus("Ready when you are.");
       logEvent("Voice session ended");
-
-      const activeSessionId = sessionIdRef.current;
-      if (activeSessionId) {
-        void updateSession(activeSessionId, { status: "ended" }).catch(() => {
-          // Status sync failures should not block ending the live call.
-        });
-      }
+      markCurrentSessionEnded();
     } finally {
       isStoppingSessionRef.current = false;
     }
-  }, [cleanupSession, logEvent, setStatus]);
+  }, [cleanupSession, logEvent, markCurrentSessionEnded, setStatus]);
 
   const ensureSessionReadyForImage = useCallback(async (): Promise<TutorSessionState> => {
     const activeSession = sessionRef.current;
