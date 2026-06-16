@@ -14,6 +14,11 @@ import { updateSession } from "../lib/session-api.js";
 import type { LoadedSessionContext, StatusTone, TutorSessionState } from "../types.js";
 import { defaultImagePrompt } from "../types.js";
 
+const checkingImagePayloadMessage = "Checking image payload...";
+const noProblemImageMessage = "No problem image yet.";
+const preparedImageMimeType = "image/jpeg";
+const preparingProblemImageMessage = "Preparing problem image...";
+
 type UseProblemImageOptions = {
   activeSessionId: string | undefined;
   ensureSessionReadyForImage: () => Promise<TutorSessionState>;
@@ -27,7 +32,7 @@ function createVoicePreparedImage(image: PreparedImage): VoicePreparedImage {
   return {
     dataUrl: image.dataUrl,
     height: image.height,
-    mimeType: "image/jpeg",
+    mimeType: preparedImageMimeType,
     name: image.name,
     size: image.size,
     width: image.width
@@ -55,7 +60,7 @@ function describeImageMeta(image: PreparedImage): SessionImageMeta {
 
 function formatStoredImageMeta(meta: SessionImageMeta | null, name: string | null): string {
   if (!meta) {
-    return "No problem image yet.";
+    return noProblemImageMessage;
   }
 
   const label = name ? `${name} · ` : "";
@@ -85,17 +90,17 @@ export function useProblemImage({
   const [preparedImage, setPreparedImage] = useState<PreparedImage | undefined>(undefined);
   const [selectedImageFile, setSelectedImageFile] = useState<File | undefined>(undefined);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
-  const [imageMeta, setImageMeta] = useState("No problem image yet.");
-  const [emptyMessage, setEmptyMessage] = useState("No problem image yet.");
+  const [imageMeta, setImageMeta] = useState(noProblemImageMessage);
+  const [emptyMessage, setEmptyMessage] = useState(noProblemImageMessage);
   const [imagePrompt, setImagePrompt] = useState(defaultImagePrompt);
 
   const imagePreparationIdRef = useRef(0);
   const promptPersistTimeoutRef = useRef<number | undefined>(undefined);
 
-  const clearPreparedImage = useCallback((message = "No problem image yet.") => {
+  const clearPreparedImage = useCallback((message = noProblemImageMessage) => {
     setSelectedImageFile(undefined);
     setPreparedImage(undefined);
-    setEmptyMessage("No problem image yet.");
+    setEmptyMessage(noProblemImageMessage);
     setImageMeta(message);
   }, []);
 
@@ -105,7 +110,7 @@ export function useProblemImage({
     setPreparedImage(undefined);
     setSelectedImageFile(undefined);
     setImagePrompt(context.imagePrompt || defaultImagePrompt);
-    setEmptyMessage(context.imageMeta ? "Saved problem image metadata loaded." : "No problem image yet.");
+    setEmptyMessage(context.imageMeta ? "Saved problem image metadata loaded." : noProblemImageMessage);
     setImageMeta(formatStoredImageMeta(context.imageMeta, context.imageName));
   }, []);
 
@@ -138,8 +143,8 @@ export function useProblemImage({
       setSelectedImageFile(file);
       setPreparedImage(undefined);
       setIsPreparingImage(true);
-      setEmptyMessage("Preparing problem image...");
-      setImageMeta("Preparing problem image...");
+      setEmptyMessage(preparingProblemImageMessage);
+      setImageMeta(preparingProblemImageMessage);
 
       try {
         const image = await prepareImage(file, getImageByteLimit(getPayloadLimitBytes()));
@@ -154,7 +159,7 @@ export function useProblemImage({
           prepared: {
             bytes: image.size,
             height: image.height,
-            mime: "image/jpeg",
+            mime: preparedImageMimeType,
             width: image.width
           },
           source: {
@@ -255,14 +260,14 @@ export function useProblemImage({
 
     setIsPreparingImage(true);
     setImageMeta(
-      getSession()?.adapter.status === "connected" ? "Checking image payload..." : "Starting tutoring..."
+      getSession()?.adapter.status === "connected" ? checkingImagePayloadMessage : "Starting tutoring..."
     );
 
     try {
       const activeSession = await ensureSessionReadyForImage();
       const fallbackPrompt = activeSession.descriptor.tutorPolicy.defaultImagePrompt;
       const prompt = imagePrompt.trim() || fallbackPrompt;
-      setImageMeta("Checking image payload...");
+      setImageMeta(checkingImagePayloadMessage);
       const image = await getSendableImage(prompt);
 
       activeSession.adapter.sendUserTurn(createVoiceUserTurn(image, prompt));
