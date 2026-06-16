@@ -4,13 +4,9 @@ import {
   createVoiceClientAdapter,
   type VoiceClientEvent
 } from "../../voice-client-adapter.js";
-import { parseVoiceSessionDescriptor } from "../../voice-session-schema.js";
-import {
-  voiceSessionPath,
-  type CreateVoiceSessionRequest,
-  type VoiceSessionDescriptor
-} from "../../voice-types.js";
+import type { VoiceSessionDescriptor } from "../../voice-types.js";
 import { updateSession } from "../lib/session-api.js";
+import { requestVoiceSessionDescriptor } from "../lib/voice-session-api.js";
 import type { AppStatus, StatusTone, TutorSessionState } from "../types.js";
 
 type StartSessionOptions = {
@@ -148,36 +144,6 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     [cleanupSessionResources, logEvent, markCurrentSessionEnded, setStatus]
   );
 
-  const fetchVoiceSessionDescriptor = useCallback(async (): Promise<VoiceSessionDescriptor> => {
-    const activeSessionId = sessionIdRef.current;
-    if (!activeSessionId) {
-      throw new Error("Choose a tutoring session first.");
-    }
-
-    const request: CreateVoiceSessionRequest = {
-      intent: "tutor",
-      sessionId: activeSessionId
-    };
-    const response = await fetch(voiceSessionPath, {
-      body: JSON.stringify(request),
-      headers: {
-        "Content-Type": "application/json"
-      },
-      method: "POST"
-    });
-    const payload = (await response.json().catch(() => null)) as (VoiceSessionDescriptor & { error?: string }) | null;
-
-    if (!response.ok) {
-      throw new Error(payload?.error ?? `Failed to create voice session (${response.status}).`);
-    }
-
-    if (!payload) {
-      throw new Error("Voice session response was not valid JSON.");
-    }
-
-    return parseVoiceSessionDescriptor(payload);
-  }, []);
-
   const createSession = useCallback(
     async (greetOnOpen: boolean): Promise<TutorSessionState> => {
       const generation = startGenerationRef.current;
@@ -193,7 +159,12 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
       };
 
       try {
-        const descriptor = await fetchVoiceSessionDescriptor();
+        const activeSessionId = sessionIdRef.current;
+        if (!activeSessionId) {
+          throw new Error("Choose a tutoring session first.");
+        }
+
+        const descriptor = await requestVoiceSessionDescriptor(activeSessionId);
         assertNotCancelled();
         setStatus("Requesting microphone access...", "working");
         const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -243,7 +214,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         throw error;
       }
     },
-    [audioRef, cleanupSession, fetchVoiceSessionDescriptor, logEvent, setStatus, wireSessionEvents]
+    [audioRef, cleanupSession, logEvent, setStatus, wireSessionEvents]
   );
 
   const startSession = useCallback(

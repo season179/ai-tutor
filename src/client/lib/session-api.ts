@@ -1,4 +1,12 @@
-import { sessionsPath, type AppendSessionEventRequest, type TutorSessionDetail, type TutorSessionRecord, type TutorSessionSummary, type UpdateTutorSessionRequest } from "../../session-types.js";
+import {
+  sessionsPath,
+  type AppendSessionEventRequest,
+  type TutorSessionDetail,
+  type TutorSessionRecord,
+  type TutorSessionSummary,
+  type UpdateTutorSessionRequest
+} from "../../session-types.js";
+import { readJsonResponse } from "./read-json-response.js";
 
 export class SessionApiError extends Error {
   constructor(
@@ -10,17 +18,12 @@ export class SessionApiError extends Error {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
-
-  if (!response.ok) {
-    throw new SessionApiError(response.status, payload?.error ?? `Request failed (${response.status}).`);
-  }
-
-  if (!payload) {
-    throw new SessionApiError(response.status, "Response was not valid JSON.");
-  }
-
-  return payload;
+  return readJsonResponse<T>(
+    response,
+    (status, message) => new SessionApiError(status, message),
+    (status) => `Request failed (${status}).`,
+    "Response was not valid JSON."
+  );
 }
 
 async function fetchJson<T>(input: string, init: RequestInit): Promise<T> {
