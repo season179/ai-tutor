@@ -98,6 +98,21 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     [cleanupSessionResources]
   );
 
+  const cleanupStoppingSession = useCallback(
+    (activeSession: TutorSessionState, afterCleanup?: () => void) => {
+      isStoppingSessionRef.current = true;
+
+      try {
+        sessionRef.current = undefined;
+        cleanupSession(activeSession);
+        afterCleanup?.();
+      } finally {
+        isStoppingSessionRef.current = false;
+      }
+    },
+    [cleanupSession]
+  );
+
   const clearDisconnectedSession = useCallback(
     (activeSession: TutorSessionState) => {
       cleanupSessionResources(activeSession);
@@ -273,18 +288,12 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
       return;
     }
 
-    isStoppingSessionRef.current = true;
-
-    try {
-      sessionRef.current = undefined;
-      cleanupSession(activeSession);
+    cleanupStoppingSession(activeSession, () => {
       setReadyStatus();
       logEvent("Voice session ended");
       markCurrentSessionEnded();
-    } finally {
-      isStoppingSessionRef.current = false;
-    }
-  }, [cleanupSession, logEvent, markCurrentSessionEnded, setReadyStatus]);
+    });
+  }, [cleanupStoppingSession, logEvent, markCurrentSessionEnded, setReadyStatus]);
 
   const ensureSessionReadyForImage = useCallback(async (): Promise<TutorSessionState> => {
     const activeSession = sessionRef.current;
@@ -321,12 +330,9 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         return;
       }
 
-      isStoppingSessionRef.current = true;
-      sessionRef.current = undefined;
-      cleanupSession(activeSession);
-      isStoppingSessionRef.current = false;
+      cleanupStoppingSession(activeSession);
     };
-  }, [cleanupSession]);
+  }, [cleanupStoppingSession]);
 
   return {
     ensureSessionReadyForImage,
