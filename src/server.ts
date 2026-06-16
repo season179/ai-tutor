@@ -12,7 +12,9 @@ import { MemorySessionStore } from "./memory-session-store.js";
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const publicDir = join(rootDir, "public");
 const sessionStore = new MemorySessionStore();
+const jsonContentType = "application/json; charset=utf-8";
 const maxPort = 65_535;
+const requestBodyTooLargeMessage = "Request body too large.";
 
 const port = readPort(process.env.PORT);
 const host = process.env.HOST;
@@ -47,7 +49,7 @@ function sendJson(
   headers: Record<string, string> = {}
 ): void {
   res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
+    "Content-Type": jsonContentType,
     "Cache-Control": "no-store",
     ...headers
   });
@@ -103,7 +105,7 @@ async function readRequestBody(req: IncomingMessage): Promise<ArrayBuffer> {
     totalBytes += buffer.byteLength;
 
     if (totalBytes > maxRequestBodyBytes) {
-      throw new Error("Request body too large.");
+      throw new Error(requestBodyTooLargeMessage);
     }
 
     chunks.push(buffer);
@@ -137,9 +139,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       requestInit.body = await readRequestBody(req);
     }
   } catch (error) {
-    if (error instanceof Error && error.message === "Request body too large.") {
-      res.writeHead(413, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "Request body too large." }));
+    if (error instanceof Error && error.message === requestBodyTooLargeMessage) {
+      res.writeHead(413, { "Content-Type": jsonContentType });
+      res.end(JSON.stringify({ error: requestBodyTooLargeMessage }));
       return;
     }
 
