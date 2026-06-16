@@ -10,7 +10,7 @@ import type {
   UpdateTutorSessionRequest
 } from "./session-types.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import type { SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
 
 type StoredSession = TutorSessionRecord & {
   events: SessionEventRecord[];
@@ -164,7 +164,7 @@ export class MemorySessionStore implements SessionStore {
   private requireOwnedSession(ownerKey: string, sessionId: string): StoredSession {
     const session = this.getOwnedSession(ownerKey, sessionId);
     if (!session) {
-      throw new Error("Session not found");
+      throw sessionStoreNotFoundError();
     }
 
     return session;

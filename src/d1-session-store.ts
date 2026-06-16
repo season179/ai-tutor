@@ -8,7 +8,7 @@ import type {
   UpdateTutorSessionRequest
 } from "./session-types.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import type { SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
 import {
   createSessionEventRecord,
   createTutorSessionRecord,
@@ -32,7 +32,7 @@ export class D1SessionStore implements SessionStore {
   ): Promise<SessionEventRecord> {
     const session = await this.getOwnedSessionRow(ownerKey, sessionId);
     if (!session) {
-      throw new Error("Session not found");
+      throw sessionStoreNotFoundError();
     }
 
     const createdAt = nowIso();
