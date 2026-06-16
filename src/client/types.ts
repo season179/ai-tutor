@@ -46,4 +46,4 @@ export function hasPriorActivity(session: TutorSessionSummary | undefined, event
 
 export const activeSessionStorageKey = "ai-tutor.active-session-id";
 
-export const defaultImagePrompt = "Help me understand this problem step by step.";
+export { defaultImagePrompt } from "../voice-types.js";

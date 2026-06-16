@@ -1,5 +1,7 @@
 export const voiceSessionPath = "/api/voice/session";
 
+export const defaultImagePrompt = "Help me understand this problem step by step.";
+
 export type VoiceBackend = "openai-realtime" | "livekit-agents";
 
 export type VoiceSessionIntent = "tutor";

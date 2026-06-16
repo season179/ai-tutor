@@ -1,8 +1,8 @@
-import type { TutorPolicy } from "./voice-types.js";
+import { defaultImagePrompt, type TutorPolicy } from "./voice-types.js";
 
 export const tutorPolicy = {
   agentName: "AI Tutor",
-  defaultImagePrompt: "Help me understand this problem step by step.",
+  defaultImagePrompt,
   greetingInstructions:
     "Greet the user as AI Tutor, briefly invite them to ask a homework question, and keep the greeting concise.",
   imageResponseInstructions:
