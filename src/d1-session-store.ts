@@ -22,6 +22,10 @@ import {
 const tutorSessionColumns =
   "id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at";
 
+function d1Rows(result: D1Result): Record<string, unknown>[] {
+  return (result.results ?? []) as Record<string, unknown>[];
+}
+
 export class D1SessionStore implements SessionStore {
   constructor(private readonly db: D1Database) {}
 
@@ -112,7 +116,7 @@ export class D1SessionStore implements SessionStore {
       .bind(sessionId, maxSessionEvents)
       .all();
 
-    const events = (eventsResult.results ?? []).map((row) => mapD1EventRow(row as Record<string, unknown>));
+    const events = d1Rows(eventsResult).map(mapD1EventRow);
 
     return {
       events,
@@ -131,9 +135,7 @@ export class D1SessionStore implements SessionStore {
       .bind(ownerKey)
       .all();
 
-    return (result.results ?? []).map((row) =>
-      toTutorSessionSummary(mapD1SessionRow(row as Record<string, unknown>))
-    );
+    return d1Rows(result).map((row) => toTutorSessionSummary(mapD1SessionRow(row)));
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
