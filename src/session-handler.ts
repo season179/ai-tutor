@@ -58,11 +58,6 @@ export async function appendSessionEvent(
   store: SessionStore
 ) {
   const request = parseAppendSessionEventRequest(body);
-  const exists = await store.sessionExists(context.ownerKey, sessionId);
-  if (!exists) {
-    throw new HttpError(404, "Session not found");
-  }
-
   try {
     return await store.appendEvent(context.ownerKey, sessionId, request);
   } catch {
