@@ -18,18 +18,14 @@ export class SessionApiError extends Error {
   }
 }
 
-async function readJson<T>(response: Response): Promise<T> {
+async function fetchJson<T>(input: string, init: RequestInit): Promise<T> {
+  const response = await fetch(input, init);
   return readJsonResponse<T>(
     response,
     (status, message) => new SessionApiError(status, message),
     (status) => `Request failed (${status}).`,
     "Response was not valid JSON."
   );
-}
-
-async function fetchJson<T>(input: string, init: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  return readJson<T>(response);
 }
 
 function getJson<T>(input: string): Promise<T> {
