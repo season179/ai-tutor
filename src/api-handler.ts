@@ -69,22 +69,6 @@ export async function handleApiRequest(
 
 function handleApiError(error: unknown, url: URL): Response {
   if (error instanceof HttpError) {
-    if (error.message === "Unauthorized") {
-      return json({ error: "Unauthorized" }, 403);
-    }
-
-    if (error.message === "Session not found") {
-      return json({ error: "Session not found" }, 404);
-    }
-
-    if (error.message.startsWith("Unsupported voice session intent")) {
-      return json({ error: error.message }, 400);
-    }
-
-    if (error.message.includes("request") && error.message.includes("invalid")) {
-      return json({ error: error.message }, 400);
-    }
-
     if (error.message === "Missing OPENAI_API_KEY") {
       return json({ error: "Server is missing OPENAI_API_KEY." }, 500);
     }
