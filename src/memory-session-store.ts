@@ -69,6 +69,21 @@ function toSessionSummary(session: TutorSessionRecord): TutorSessionSummary {
   };
 }
 
+function createSessionEventRecord(
+  sessionId: string,
+  id: number,
+  createdAt: string,
+  request: AppendSessionEventRequest
+): SessionEventRecord {
+  return {
+    createdAt,
+    id,
+    message: request.message,
+    sessionId,
+    value: request.value ?? null
+  };
+}
+
 export class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
   private nextEventId = 1;
@@ -80,13 +95,7 @@ export class MemorySessionStore implements SessionStore {
   ): Promise<SessionEventRecord> {
     const session = await this.requireOwnedSession(ownerKey, sessionId);
     const createdAt = nowIso();
-    const event: SessionEventRecord = {
-      createdAt,
-      id: this.nextEventId++,
-      message: request.message,
-      sessionId,
-      value: request.value ?? null
-    };
+    const event = createSessionEventRecord(sessionId, this.nextEventId++, createdAt, request);
 
     session.events.unshift(event);
     session.events = session.events.slice(0, maxSessionEvents);
@@ -229,4 +238,12 @@ export function mapD1EventRow(row: Record<string, unknown>): SessionEventRecord 
   };
 }
 
-export { defaultTitle, nowIso, parseImageMeta, rowStringOrNull, serializeImageMeta, toSessionSummary };
+export {
+  createSessionEventRecord,
+  defaultTitle,
+  nowIso,
+  parseImageMeta,
+  rowStringOrNull,
+  serializeImageMeta,
+  toSessionSummary
+};

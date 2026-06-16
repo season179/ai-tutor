@@ -10,6 +10,7 @@ import type {
 import { maxSessionEvents } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import {
+  createSessionEventRecord,
   defaultTitle,
   mapD1EventRow,
   mapD1SessionRow,
@@ -65,13 +66,7 @@ export class D1SessionStore implements SessionStore {
       .bind(sessionId, maxSessionEvents)
       .run();
 
-    return {
-      createdAt,
-      id: eventId,
-      message: request.message,
-      sessionId,
-      value: request.value ?? null
-    };
+    return createSessionEventRecord(sessionId, eventId, createdAt, request);
   }
 
   async createSession(ownerKey: string, request: CreateTutorSessionRequest = {}): Promise<TutorSessionRecord> {
