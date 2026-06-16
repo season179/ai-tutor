@@ -169,13 +169,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
 
   requestReply(instructions?: string): void {
     const transport = this.requireTransport();
-
-    if (instructions) {
-      transport.requestResponse({ instructions });
-      return;
-    }
-
-    transport.requestResponse({});
+    transport.requestResponse(instructions ? { instructions } : {});
   }
 
   sendUserTurn(turn: VoiceUserTurn): void {
