@@ -7,7 +7,7 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
-import { maxSessionEvents } from "./session-types.js";
+import { maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createSessionEventRecord,
@@ -16,8 +16,7 @@ import {
   mapD1SessionRow,
   nowIso,
   rowStringOrNull,
-  serializeImageMeta,
-  toSessionSummary
+  serializeImageMeta
 } from "./memory-session-store.js";
 
 export class D1SessionStore implements SessionStore {
@@ -131,7 +130,7 @@ export class D1SessionStore implements SessionStore {
       .all();
 
     return (result.results ?? []).map((row) =>
-      toSessionSummary(mapD1SessionRow(row as Record<string, unknown>))
+      toTutorSessionSummary(mapD1SessionRow(row as Record<string, unknown>))
     );
   }
 

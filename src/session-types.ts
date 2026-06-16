@@ -54,3 +54,13 @@ export type AppendSessionEventRequest = {
   message: string;
   value?: unknown;
 };
+
+export function toTutorSessionSummary(session: TutorSessionRecord): TutorSessionSummary {
+  return {
+    createdAt: session.createdAt,
+    id: session.id,
+    status: session.status,
+    title: session.title,
+    updatedAt: session.updatedAt
+  };
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { TutorSessionSummary } from "../../session-types.js";
+import { toTutorSessionSummary, type TutorSessionSummary } from "../../session-types.js";
 import { formatEventEntry } from "../lib/format-event-entry.js";
 import {
   createSession,
@@ -232,15 +232,7 @@ export function useTutorSessions({
       const updated = await updateSession(activeSessionId, request);
       setSessions((previous) =>
         previous.map((session) =>
-          session.id === updated.id
-            ? {
-                createdAt: updated.createdAt,
-                id: updated.id,
-                status: updated.status,
-                title: updated.title,
-                updatedAt: updated.updatedAt
-              }
-            : session
+          session.id === updated.id ? toTutorSessionSummary(updated) : session
         )
       );
     },

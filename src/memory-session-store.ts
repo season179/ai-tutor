@@ -9,7 +9,7 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
-import { maxSessionEvents } from "./session-types.js";
+import { maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 
 type StoredSession = TutorSessionRecord & {
@@ -57,16 +57,6 @@ function parseImageMeta(value: string | null): SessionImageMeta | null {
 
 function serializeImageMeta(value: SessionImageMeta | null | undefined): string | null {
   return value ? JSON.stringify(value) : null;
-}
-
-function toSessionSummary(session: TutorSessionRecord): TutorSessionSummary {
-  return {
-    createdAt: session.createdAt,
-    id: session.id,
-    status: session.status,
-    title: session.title,
-    updatedAt: session.updatedAt
-  };
 }
 
 function createTutorSessionRecord(
@@ -150,7 +140,7 @@ export class MemorySessionStore implements SessionStore {
     return [...this.sessions.values()]
       .filter((session) => session.ownerKey === ownerKey)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .map((session) => toSessionSummary(this.toRecord(session)));
+      .map((session) => toTutorSessionSummary(this.toRecord(session)));
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
@@ -255,6 +245,5 @@ export {
   nowIso,
   parseImageMeta,
   rowStringOrNull,
-  serializeImageMeta,
-  toSessionSummary
+  serializeImageMeta
 };
