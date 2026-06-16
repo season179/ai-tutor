@@ -125,8 +125,8 @@ export class MemorySessionStore implements SessionStore {
   }
 
   async getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null> {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.ownerKey !== ownerKey) {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session) {
       return null;
     }
 
@@ -144,8 +144,7 @@ export class MemorySessionStore implements SessionStore {
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
-    const session = this.sessions.get(sessionId);
-    return Boolean(session && session.ownerKey === ownerKey);
+    return Boolean(this.getOwnedSession(ownerKey, sessionId));
   }
 
   async updateSession(
@@ -153,8 +152,8 @@ export class MemorySessionStore implements SessionStore {
     sessionId: string,
     request: UpdateTutorSessionRequest
   ): Promise<TutorSessionRecord | null> {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.ownerKey !== ownerKey) {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session) {
       return null;
     }
 
@@ -163,12 +162,17 @@ export class MemorySessionStore implements SessionStore {
   }
 
   private async requireOwnedSession(ownerKey: string, sessionId: string): Promise<StoredSession> {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.ownerKey !== ownerKey) {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session) {
       throw new Error("Session not found");
     }
 
     return session;
+  }
+
+  private getOwnedSession(ownerKey: string, sessionId: string): StoredSession | null {
+    const session = this.sessions.get(sessionId);
+    return session && session.ownerKey === ownerKey ? session : null;
   }
 
   private toRecord(session: StoredSession): TutorSessionRecord {
