@@ -1,5 +1,6 @@
 import { HttpError, sessionNotFoundHttpError } from "./http-error.js";
 import type { RequestContext } from "./request-context.js";
+import { isJsonObject } from "./schema-parser.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createVoiceSessionService,
@@ -10,17 +11,16 @@ import { serializeVoiceSessionDescriptor } from "./voice-session-schema.js";
 import type { CreateVoiceSessionRequest, VoiceSessionDescriptor } from "./voice-types.js";
 
 export function parseCreateVoiceSessionRequest(value: unknown): CreateVoiceSessionRequest {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isJsonObject(value)) {
     throw new HttpError(400, "Voice session request must be a JSON object");
   }
 
-  const record = value as { intent?: unknown; sessionId?: unknown };
-  const intent = record.intent;
+  const intent = value.intent;
   if (intent !== "tutor") {
     throw new HttpError(400, `Unsupported voice session intent: ${String(intent)}`);
   }
 
-  const sessionId = record.sessionId;
+  const sessionId = value.sessionId;
   if (typeof sessionId !== "string" || !sessionId.trim()) {
     throw new HttpError(400, "Voice session request must include sessionId");
   }

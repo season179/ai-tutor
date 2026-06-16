@@ -5,12 +5,16 @@ type ParseObjectMessages = {
   notObject: string;
 };
 
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function parseObjectWithSchema<T>(
   schema: z.ZodType<T>,
   value: unknown,
   messages: ParseObjectMessages
 ): T {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isJsonObject(value)) {
     throw new Error(messages.notObject);
   }
 
