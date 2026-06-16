@@ -63,6 +63,11 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     setStatusState({ message, tone });
   }, []);
 
+  const setReadyStatus = useCallback(() => {
+    setIsRunning(false);
+    setStatus("Ready when you are.");
+  }, [setStatus]);
+
   const cleanupSessionResources = useCallback((activeSession: TutorSessionState | undefined) => {
     if (!activeSession) {
       return;
@@ -149,7 +154,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
             return;
         }
       }),
-    [cleanupSessionResources, logEvent, markCurrentSessionEnded, setStatus]
+    [clearDisconnectedSession, logEvent, markCurrentSessionEnded, setStatus]
   );
 
   const createSession = useCallback(
@@ -213,7 +218,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         setIsRunning(false);
 
         if (error instanceof Error && error.message === "Voice session start cancelled.") {
-          setStatus("Ready when you are.");
+          setReadyStatus();
           throw error;
         }
 
@@ -259,8 +264,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     const activeSession = sessionRef.current;
 
     if (!activeSession) {
-      setIsRunning(false);
-      setStatus("Ready when you are.");
+      setReadyStatus();
       return;
     }
 
@@ -269,14 +273,13 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     try {
       sessionRef.current = undefined;
       cleanupSession(activeSession);
-      setIsRunning(false);
-      setStatus("Ready when you are.");
+      setReadyStatus();
       logEvent("Voice session ended");
       markCurrentSessionEnded();
     } finally {
       isStoppingSessionRef.current = false;
     }
-  }, [cleanupSession, logEvent, markCurrentSessionEnded, setStatus]);
+  }, [cleanupSession, logEvent, markCurrentSessionEnded, setReadyStatus]);
 
   const ensureSessionReadyForImage = useCallback(async (): Promise<TutorSessionState> => {
     const activeSession = sessionRef.current;
