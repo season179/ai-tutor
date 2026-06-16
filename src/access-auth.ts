@@ -76,18 +76,14 @@ export async function verifyAccessJwt(
     });
 
     const sub = typeof payload.sub === "string" ? payload.sub.trim() : "";
-    if (!sub) {
-      throw unauthorized();
+    if (sub) {
+      return createAccessIdentity(sub, payload.email);
     }
-
-    return createAccessIdentity(sub, payload.email);
-  } catch (error) {
-    if (error instanceof HttpError) {
-      throw error;
-    }
-
+  } catch {
     throw unauthorized();
   }
+
+  throw unauthorized();
 }
 
 export async function authenticateRequest(
