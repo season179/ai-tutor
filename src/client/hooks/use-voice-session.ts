@@ -5,6 +5,7 @@ import {
   type VoiceClientEvent
 } from "../../voice-client-adapter.js";
 import type { VoiceSessionDescriptor } from "../../voice-types.js";
+import { errorLogValue, errorMessage } from "../lib/error-message.js";
 import { updateSession } from "../lib/session-api.js";
 import { requestVoiceSessionDescriptor } from "../lib/voice-session-api.js";
 import type { AppStatus, StatusTone, TutorSessionState } from "../types.js";
@@ -133,8 +134,8 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
             return;
           case "error": {
             const error = event.error;
-            setStatus(error instanceof Error ? error.message : "Voice session error.", "error");
-            logEvent("Voice session error", error instanceof Error ? error.message : error);
+            setStatus(errorMessage(error, "Voice session error."), "error");
+            logEvent("Voice session error", errorLogValue(error));
             return;
           }
           case "connected":
@@ -209,8 +210,8 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
           throw error;
         }
 
-        setStatus(error instanceof Error ? error.message : "Failed to start session.", "error");
-        logEvent("Start failed", error instanceof Error ? error.message : error);
+        setStatus(errorMessage(error, "Failed to start session."), "error");
+        logEvent("Start failed", errorLogValue(error));
         throw error;
       }
     },

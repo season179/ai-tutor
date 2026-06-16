@@ -10,6 +10,7 @@ import { useEventLog } from "./hooks/use-event-log.js";
 import { useProblemImage } from "./hooks/use-problem-image.js";
 import { useTutorSessions } from "./hooks/use-tutor-sessions.js";
 import { useVoiceSession } from "./hooks/use-voice-session.js";
+import { errorMessage } from "./lib/error-message.js";
 import type { LoadedSessionContext, StatusTone } from "./types.js";
 import { hasPriorActivity } from "./types.js";
 
@@ -75,7 +76,7 @@ export function App() {
     startSession({ greet })
       .then(() => tutorSessions.refreshSessions())
       .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : "Unexpected error.", "error");
+        setStatus(errorMessage(error, "Unexpected error."), "error");
       });
   };
 

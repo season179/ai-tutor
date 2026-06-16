@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 import type { SessionImageMeta } from "../../session-types.js";
 import type { VoicePreparedImage, VoiceUserTurn } from "../../voice-types.js";
+import { errorLogValue, errorMessage } from "../lib/error-message.js";
 import {
   describePreparedImage,
   getImageByteLimit,
@@ -169,8 +170,8 @@ export function useProblemImage({
           return;
         }
 
-        clearPreparedImage(error instanceof Error ? error.message : "Could not prepare the problem image.");
-        logEvent("Problem image preparation failed", error instanceof Error ? error.message : error);
+        clearPreparedImage(errorMessage(error, "Could not prepare the problem image."));
+        logEvent("Problem image preparation failed", errorLogValue(error));
       } finally {
         if (preparationId === imagePreparationIdRef.current) {
           setIsPreparingImage(false);
@@ -189,7 +190,7 @@ export function useProblemImage({
       }
 
       prepareSelectedImage(file).catch((error: unknown) => {
-        logEvent("Problem image preparation failed", error instanceof Error ? error.message : error);
+        logEvent("Problem image preparation failed", errorLogValue(error));
       });
     },
     [clearPreparedImage, imagePrompt, logEvent, persistImageContext, prepareSelectedImage]
@@ -277,7 +278,7 @@ export function useProblemImage({
         width: image.width
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not send the problem image.";
+      const message = errorMessage(error, "Could not send the problem image.");
       setStatus(message, "error");
       setImageMeta(message);
       logEvent("Problem image send failed", message);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { toTutorSessionSummary, type TutorSessionSummary } from "../../session-types.js";
+import { errorMessage } from "../lib/error-message.js";
 import { formatEventEntry } from "../lib/format-event-entry.js";
 import {
   createSession,
@@ -43,7 +44,7 @@ function toSessionListError(error: unknown): SessionListError {
 
   return {
     kind: "unknown",
-    message: error instanceof Error ? error.message : "Could not load sessions."
+    message: errorMessage(error, "Could not load sessions.")
   };
 }
 
