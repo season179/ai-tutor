@@ -64,3 +64,19 @@ export function toTutorSessionSummary(session: TutorSessionRecord): TutorSession
     updatedAt: session.updatedAt
   };
 }
+
+export function applyTutorSessionUpdate(
+  session: TutorSessionRecord,
+  request: UpdateTutorSessionRequest,
+  updatedAt: string
+): TutorSessionRecord {
+  return {
+    ...session,
+    imageMeta: request.imageMeta !== undefined ? request.imageMeta : session.imageMeta,
+    imageName: request.imageName !== undefined ? request.imageName : session.imageName,
+    imagePrompt: request.imagePrompt !== undefined ? request.imagePrompt : session.imagePrompt,
+    status: request.status !== undefined ? request.status : session.status,
+    title: request.title !== undefined ? request.title.trim() : session.title,
+    updatedAt
+  };
+}

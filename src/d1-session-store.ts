@@ -7,7 +7,7 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
-import { maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
+import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createSessionEventRecord,
@@ -149,14 +149,10 @@ export class D1SessionStore implements SessionStore {
       return null;
     }
 
-    const updatedAt = nowIso();
-    const title = request.title !== undefined ? request.title.trim() : String(existing.title);
-    const status = request.status ?? (existing.status as TutorSessionRecord["status"]);
-    const imagePrompt = request.imagePrompt !== undefined ? request.imagePrompt : rowStringOrNull(existing.image_prompt);
-    const imageName = request.imageName !== undefined ? request.imageName : rowStringOrNull(existing.image_name);
+    const updated = applyTutorSessionUpdate(mapD1SessionRow(existing), request, nowIso());
     const imageMetaJson =
       request.imageMeta !== undefined
-        ? serializeImageMeta(request.imageMeta)
+        ? serializeImageMeta(updated.imageMeta)
         : rowStringOrNull(existing.image_meta_json);
 
     await this.db
@@ -165,17 +161,26 @@ export class D1SessionStore implements SessionStore {
          SET title = ?, status = ?, image_prompt = ?, image_name = ?, image_meta_json = ?, updated_at = ?
          WHERE id = ? AND owner_key = ?`
       )
-      .bind(title, status, imagePrompt, imageName, imageMetaJson, updatedAt, sessionId, ownerKey)
+      .bind(
+        updated.title,
+        updated.status,
+        updated.imagePrompt,
+        updated.imageName,
+        imageMetaJson,
+        updated.updatedAt,
+        sessionId,
+        ownerKey
+      )
       .run();
 
     return mapD1SessionRow({
       ...existing,
       image_meta_json: imageMetaJson,
-      image_name: imageName,
-      image_prompt: imagePrompt,
-      status,
-      title,
-      updated_at: updatedAt
+      image_name: updated.imageName,
+      image_prompt: updated.imagePrompt,
+      status: updated.status,
+      title: updated.title,
+      updated_at: updated.updatedAt
     });
   }
 

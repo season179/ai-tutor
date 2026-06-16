@@ -9,7 +9,7 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
-import { maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
+import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 
 type StoredSession = TutorSessionRecord & {
@@ -158,27 +158,7 @@ export class MemorySessionStore implements SessionStore {
       return null;
     }
 
-    if (request.title !== undefined) {
-      session.title = request.title.trim();
-    }
-
-    if (request.status !== undefined) {
-      session.status = request.status;
-    }
-
-    if (request.imagePrompt !== undefined) {
-      session.imagePrompt = request.imagePrompt;
-    }
-
-    if (request.imageName !== undefined) {
-      session.imageName = request.imageName;
-    }
-
-    if (request.imageMeta !== undefined) {
-      session.imageMeta = request.imageMeta;
-    }
-
-    session.updatedAt = nowIso();
+    Object.assign(session, applyTutorSessionUpdate(this.toRecord(session), request, nowIso()));
     return this.toRecord(session);
   }
 
