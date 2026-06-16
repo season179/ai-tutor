@@ -33,12 +33,7 @@ export const updateTutorSessionRequestSchema = z
     title: z.string().trim().min(1).max(120).optional()
   })
   .refine(
-    (value) =>
-      value.title !== undefined ||
-      value.status !== undefined ||
-      value.imagePrompt !== undefined ||
-      value.imageName !== undefined ||
-      value.imageMeta !== undefined,
+    (value) => Object.values(value).some((field) => field !== undefined),
     { message: "At least one field must be provided" }
   );
 
