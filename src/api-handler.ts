@@ -1,12 +1,11 @@
 import { authenticateRequest, type AccessAuthEnv } from "./access-auth.js";
 import { HttpError, type JsonValue } from "./http-error.js";
 import type { SessionStore } from "./session-store.js";
-import { handleSessionsRequest } from "./session-handler.js";
+import { handleSessionsRequest, readJsonBody } from "./session-handler.js";
 import { sessionsPath } from "./session-types.js";
 import { createVoiceSessionWithStore } from "./voice-session-handler.js";
 import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { voiceSessionPath } from "./voice-types.js";
-import { readJsonBody } from "./session-handler.js";
 
 export type ApiHandlerEnv = AccessAuthEnv & VoiceSessionServiceEnv;
 
@@ -65,9 +64,11 @@ export async function handleApiRequest(
   }
 
   try {
-    const authOptions =
-      options.allowDevBypass === true ? ({ allowDevBypass: true } as const) : {};
-    const context = await authenticateRequest(request, env, authOptions);
+    const context = await authenticateRequest(
+      request,
+      env,
+      options.allowDevBypass ? { allowDevBypass: true } : undefined
+    );
 
     if (url.pathname === voiceSessionPath) {
       if (request.method !== "POST") {
