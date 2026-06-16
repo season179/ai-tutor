@@ -139,12 +139,8 @@ export function useTutorSessions({
     }
   }, []);
 
-  const selectSession = useCallback(
-    async (sessionId: string) => {
-      if (sessionId === activeSessionId) {
-        return;
-      }
-
+  const runSessionSwitch = useCallback(
+    async <T>(task: () => Promise<T>): Promise<T> => {
       setIsSwitching(true);
       setListError(null);
 
@@ -153,9 +149,7 @@ export function useTutorSessions({
           stopVoiceSession();
         }
 
-        await hydrateSession(sessionId);
-        persistActiveSessionId(sessionId);
-        setStatus("Session loaded.", "ready");
+        return await task();
       } catch (error) {
         const mapped = toSessionListError(error);
         setListError(mapped);
@@ -165,25 +159,32 @@ export function useTutorSessions({
         setIsSwitching(false);
       }
     },
+    [getIsVoiceRunning, setStatus, stopVoiceSession]
+  );
+
+  const selectSession = useCallback(
+    async (sessionId: string) => {
+      if (sessionId === activeSessionId) {
+        return;
+      }
+
+      await runSessionSwitch(async () => {
+        await hydrateSession(sessionId);
+        persistActiveSessionId(sessionId);
+        setStatus("Session loaded.", "ready");
+      });
+    },
     [
       activeSessionId,
-      getIsVoiceRunning,
       hydrateSession,
       persistActiveSessionId,
-      setStatus,
-      stopVoiceSession
+      runSessionSwitch,
+      setStatus
     ]
   );
 
-  const createNewSession = useCallback(async () => {
-    setIsSwitching(true);
-    setListError(null);
-
-    try {
-      if (getIsVoiceRunning()) {
-        stopVoiceSession();
-      }
-
+  const createNewSession = useCallback(() => {
+    return runSessionSwitch(async () => {
       const created = await createSession();
       const nextSessions = await refreshSessions();
       const ordered = nextSessions.some((session) => session.id === created.id)
@@ -203,24 +204,16 @@ export function useTutorSessions({
       setStatus("New session ready.", "ready");
       logEvent("Session created", { sessionId: created.id, title: created.title }, created.id);
       return created.id;
-    } catch (error) {
-      const mapped = toSessionListError(error);
-      setListError(mapped);
-      setStatus(mapped.message, "error");
-      throw error;
-    } finally {
-      setIsSwitching(false);
-    }
+    });
   }, [
     clearEventLog,
-    getIsVoiceRunning,
     loadSessionContext,
     logEvent,
     persistActiveSessionId,
     refreshSessions,
     resetProblemImage,
-    setStatus,
-    stopVoiceSession
+    runSessionSwitch,
+    setStatus
   ]);
 
   const updateActiveSession = useCallback(
