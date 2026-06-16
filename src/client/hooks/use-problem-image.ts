@@ -105,22 +105,25 @@ export function useProblemImage({
     setImageMeta(message);
   }, []);
 
-  const loadSessionContext = useCallback((context: LoadedSessionContext) => {
+  const cancelCurrentImagePreparation = useCallback(() => {
     imagePreparationIdRef.current += 1;
     setIsPreparingImage(false);
+  }, []);
+
+  const loadSessionContext = useCallback((context: LoadedSessionContext) => {
+    cancelCurrentImagePreparation();
     setPreparedImage(undefined);
     setSelectedImageFile(undefined);
     setImagePrompt(context.imagePrompt || defaultImagePrompt);
     setEmptyMessage(context.imageMeta ? "Saved problem image metadata loaded." : noProblemImageMessage);
     setImageMeta(formatStoredImageMeta(context.imageMeta, context.imageName));
-  }, []);
+  }, [cancelCurrentImagePreparation]);
 
   const resetProblemImage = useCallback(() => {
-    imagePreparationIdRef.current += 1;
-    setIsPreparingImage(false);
+    cancelCurrentImagePreparation();
     clearPreparedImage();
     setImagePrompt(defaultImagePrompt);
-  }, [clearPreparedImage]);
+  }, [cancelCurrentImagePreparation, clearPreparedImage]);
 
   const persistImageContext = useCallback(
     async (image: PreparedImage | undefined, prompt: string) => {
