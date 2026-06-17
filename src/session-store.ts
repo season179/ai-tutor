@@ -20,3 +20,7 @@ export type SessionStore = {
     request: UpdateTutorSessionRequest
   ): Promise<TutorSessionRecord | null>;
 };
+
+export function sessionStoreNotFoundError(): Error {
+  return new Error("Session not found");
+}

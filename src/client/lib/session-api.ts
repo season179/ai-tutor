@@ -1,4 +1,13 @@
-import { sessionsPath, type AppendSessionEventRequest, type TutorSessionDetail, type TutorSessionRecord, type TutorSessionSummary, type UpdateTutorSessionRequest } from "../../session-types.js";
+import {
+  sessionsPath,
+  type AppendSessionEventRequest,
+  type TutorSessionDetail,
+  type TutorSessionRecord,
+  type TutorSessionSummary,
+  type UpdateTutorSessionRequest
+} from "../../session-types.js";
+import { jsonRequestInit } from "./json-request.js";
+import { readJsonResponse } from "./read-json-response.js";
 
 export class SessionApiError extends Error {
   constructor(
@@ -9,80 +18,47 @@ export class SessionApiError extends Error {
   }
 }
 
-async function readJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+async function fetchJson<T>(input: string, init: RequestInit): Promise<T> {
+  const response = await fetch(input, init);
+  return readJsonResponse<T>(
+    response,
+    (status, message) => new SessionApiError(status, message),
+    (status) => `Request failed (${status}).`,
+    "Response was not valid JSON."
+  );
+}
 
-  if (!response.ok) {
-    throw new SessionApiError(response.status, payload?.error ?? `Request failed (${response.status}).`);
-  }
-
-  if (!payload) {
-    throw new SessionApiError(response.status, "Response was not valid JSON.");
-  }
-
-  return payload;
+function getJson<T>(input: string): Promise<T> {
+  return fetchJson<T>(input, {
+    headers: {
+      Accept: "application/json"
+    },
+    method: "GET"
+  });
 }
 
 export async function listSessions(): Promise<TutorSessionSummary[]> {
-  const response = await fetch(sessionsPath, {
-    headers: {
-      Accept: "application/json"
-    },
-    method: "GET"
-  });
-
-  return readJson<TutorSessionSummary[]>(response);
+  return getJson<TutorSessionSummary[]>(sessionsPath);
 }
 
 export async function createSession(title?: string): Promise<TutorSessionRecord> {
-  const response = await fetch(sessionsPath, {
-    body: JSON.stringify(title ? { title } : {}),
-    headers: {
-      "Content-Type": "application/json"
-    },
-    method: "POST"
-  });
-
-  return readJson<TutorSessionRecord>(response);
+  return fetchJson<TutorSessionRecord>(sessionsPath, jsonRequestInit("POST", title ? { title } : {}));
 }
 
 export async function getSession(sessionId: string): Promise<TutorSessionDetail> {
-  const response = await fetch(`${sessionsPath}/${sessionId}`, {
-    headers: {
-      Accept: "application/json"
-    },
-    method: "GET"
-  });
-
-  return readJson<TutorSessionDetail>(response);
+  return getJson<TutorSessionDetail>(`${sessionsPath}/${sessionId}`);
 }
 
 export async function updateSession(
   sessionId: string,
   request: UpdateTutorSessionRequest
 ): Promise<TutorSessionRecord> {
-  const response = await fetch(`${sessionsPath}/${sessionId}`, {
-    body: JSON.stringify(request),
-    headers: {
-      "Content-Type": "application/json"
-    },
-    method: "PATCH"
-  });
-
-  return readJson<TutorSessionRecord>(response);
+  return fetchJson<TutorSessionRecord>(`${sessionsPath}/${sessionId}`, jsonRequestInit("PATCH", request));
 }
 
 export async function appendSessionEvent(
   sessionId: string,
   request: AppendSessionEventRequest
 ): Promise<void> {
-  const response = await fetch(`${sessionsPath}/${sessionId}/events`, {
-    body: JSON.stringify(request),
-    headers: {
-      "Content-Type": "application/json"
-    },
-    method: "POST"
-  });
-
-  await readJson(response);
+  await fetchJson<unknown>(`${sessionsPath}/${sessionId}/events`, jsonRequestInit("POST", request));
 }

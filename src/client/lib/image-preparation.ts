@@ -1,7 +1,4 @@
 import { formatBytes } from "./format-bytes.js";
-import { getImageByteLimit, imageJsonOverheadBytes } from "./image-byte-limit.js";
-
-export { getImageByteLimit, imageJsonOverheadBytes };
 
 export type PreparedImage = {
   dataUrl: string;
@@ -28,6 +25,9 @@ const minImageLargestSide = 256;
 const initialJpegQuality = 0.88;
 const minJpegQuality = 0.62;
 const jpegQualityStep = 0.08;
+const preparedImageReadErrorMessage = "This browser could not read the prepared image.";
+
+export const preparedImageMimeType = "image/jpeg";
 
 function fitWithin(width: number, height: number, maxDimension: number): { height: number; width: number } {
   const largestSide = Math.max(width, height);
@@ -112,10 +112,27 @@ function renderJpeg(source: CanvasImageSource, width: number, height: number, qu
 
         resolve(blob);
       },
-      "image/jpeg",
+      preparedImageMimeType,
       quality
     );
   });
+}
+
+async function renderJpegWithinQualityBudget(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  targetBytes: number
+): Promise<{ blob: Blob; quality: number }> {
+  let quality = initialJpegQuality;
+  let blob = await renderJpeg(source, width, height, quality);
+
+  while (blob.size > targetBytes && quality > minJpegQuality) {
+    quality = Math.max(minJpegQuality, quality - jpegQualityStep);
+    blob = await renderJpeg(source, width, height, quality);
+  }
+
+  return { blob, quality };
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -123,13 +140,13 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       if (typeof reader.result !== "string") {
-        reject(new Error("This browser could not read the prepared image."));
+        reject(new Error(preparedImageReadErrorMessage));
         return;
       }
 
       resolve(reader.result);
     });
-    reader.addEventListener("error", () => reject(new Error("This browser could not read the prepared image.")));
+    reader.addEventListener("error", () => reject(new Error(preparedImageReadErrorMessage)));
     reader.readAsDataURL(blob);
   });
 }
@@ -139,25 +156,15 @@ async function encodeJpegWithinBudget(
   targetBytes: number
 ): Promise<{ blob: Blob; height: number; quality: number; width: number }> {
   let { width, height } = fitWithin(decoded.width, decoded.height, maxImageDimension);
-  let quality = initialJpegQuality;
-  let blob = await renderJpeg(decoded.source, width, height, quality);
-
-  while (blob.size > targetBytes && quality > minJpegQuality) {
-    quality = Math.max(minJpegQuality, quality - jpegQualityStep);
-    blob = await renderJpeg(decoded.source, width, height, quality);
-  }
+  let { blob, quality } = await renderJpegWithinQualityBudget(decoded.source, width, height, targetBytes);
 
   while (blob.size > targetBytes && Math.max(width, height) > minImageLargestSide) {
     const scale = Math.max(0.5, Math.sqrt(targetBytes / blob.size) * 0.94);
     width = Math.max(1, Math.round(width * scale));
     height = Math.max(1, Math.round(height * scale));
-    quality = initialJpegQuality;
-    blob = await renderJpeg(decoded.source, width, height, quality);
-
-    while (blob.size > targetBytes && quality > minJpegQuality) {
-      quality = Math.max(minJpegQuality, quality - jpegQualityStep);
-      blob = await renderJpeg(decoded.source, width, height, quality);
-    }
+    const encoded = await renderJpegWithinQualityBudget(decoded.source, width, height, targetBytes);
+    blob = encoded.blob;
+    quality = encoded.quality;
   }
 
   if (blob.size > targetBytes) {
@@ -196,7 +203,7 @@ export async function prepareImage(file: File, targetBytes: number): Promise<Pre
 
 export function describePreparedImage(image: PreparedImage): string {
   const converted =
-    image.originalType === "image/jpeg" &&
+    image.originalType === preparedImageMimeType &&
     image.originalWidth === image.width &&
     image.originalHeight === image.height
       ? "JPEG"

@@ -17,8 +17,8 @@ export type VoiceClientAdapterStatus = "idle" | "connecting" | "connected" | "di
 
 export type VoiceClientEvent =
   | { type: "connecting" }
-  | { detail?: unknown; type: "connected" }
-  | { detail?: unknown; type: "disconnected" }
+  | { type: "connected" }
+  | { type: "disconnected" }
   | { type: "reply_started" }
   | { type: "reply_finished" }
   | { error: unknown; type: "error" }
@@ -66,6 +66,10 @@ function createSessionConfig(session: OpenAIRealtimeSessionDescriptor): Partial<
     },
     outputModalities: ["audio"]
   };
+}
+
+function throwLiveKitAgentsUnavailable(): never {
+  throw new Error("LiveKit Agents browser adapter is not implemented in this foundation pass.");
 }
 
 abstract class BaseVoiceClientAdapter implements VoiceClientAdapter {
@@ -133,14 +137,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
     try {
       await realtimeSession.connect({ apiKey: session.clientSecret });
       this.status = "connected";
-      this.emit({
-        detail: {
-          model: session.model,
-          provider: session.provider,
-          voice: session.voice
-        },
-        type: "connected"
-      });
+      this.emit({ type: "connected" });
     } catch (error) {
       this.status = "disconnected";
       this.emit({ error, type: "error" });
@@ -165,13 +162,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
 
   requestReply(instructions?: string): void {
     const transport = this.requireTransport();
-
-    if (instructions) {
-      transport.requestResponse({ instructions });
-      return;
-    }
-
-    transport.requestResponse({});
+    transport.requestResponse(instructions ? { instructions } : {});
   }
 
   sendUserTurn(turn: VoiceUserTurn): void {
@@ -217,7 +208,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
       }
 
       this.status = "disconnected";
-      this.emit({ detail: { provider: "openai-realtime" }, type: "disconnected" });
+      this.emit({ type: "disconnected" });
     });
 
     transport.on("*", (event: TransportEvent) => {
@@ -244,7 +235,7 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
 
 class LiveKitAgentsClientAdapter extends BaseVoiceClientAdapter {
   connect(): Promise<void> {
-    throw new Error("LiveKit Agents browser adapter is not implemented in this foundation pass.");
+    throwLiveKitAgentsUnavailable();
   }
 
   disconnect(): void {
@@ -256,10 +247,10 @@ class LiveKitAgentsClientAdapter extends BaseVoiceClientAdapter {
   }
 
   requestReply(): void {
-    throw new Error("LiveKit Agents browser adapter is not implemented in this foundation pass.");
+    throwLiveKitAgentsUnavailable();
   }
 
   sendUserTurn(): void {
-    throw new Error("LiveKit Agents browser adapter is not implemented in this foundation pass.");
+    throwLiveKitAgentsUnavailable();
   }
 }

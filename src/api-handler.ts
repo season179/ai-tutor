@@ -1,24 +1,42 @@
-import type { D1Database } from "@cloudflare/workers-types";
-
 import { authenticateRequest, type AccessAuthEnv } from "./access-auth.js";
 import { HttpError, type JsonValue } from "./http-error.js";
 import type { SessionStore } from "./session-store.js";
-import { parseSessionRoute, handleSessionsRequest } from "./session-handler.js";
+import { handleSessionsRequest, readJsonBody } from "./session-handler.js";
 import { sessionsPath } from "./session-types.js";
 import { createVoiceSessionWithStore } from "./voice-session-handler.js";
 import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { voiceSessionPath } from "./voice-types.js";
-import { readJsonBody } from "./session-handler.js";
 
-export type ApiHandlerEnv = AccessAuthEnv &
-  VoiceSessionServiceEnv & {
-    DB?: D1Database;
-  };
+export type ApiHandlerEnv = AccessAuthEnv & VoiceSessionServiceEnv;
+
+export type ApiHandlerEnvSource = {
+  ACCESS_DEV_IDENTITY?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_REALTIME_MODEL?: string;
+  OPENAI_REALTIME_VOICE?: string;
+  OPENAI_SAFETY_IDENTIFIER?: string;
+  POLICY_AUD?: string;
+  TEAM_DOMAIN?: string;
+  VOICE_BACKEND?: string;
+};
 
 export type ApiHandlerOptions = {
   allowDevBypass?: boolean;
   store: SessionStore;
 };
+
+export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv {
+  return {
+    OPENAI_API_KEY: source.OPENAI_API_KEY,
+    OPENAI_REALTIME_MODEL: source.OPENAI_REALTIME_MODEL,
+    OPENAI_REALTIME_VOICE: source.OPENAI_REALTIME_VOICE,
+    OPENAI_SAFETY_IDENTIFIER: source.OPENAI_SAFETY_IDENTIFIER,
+    VOICE_BACKEND: source.VOICE_BACKEND,
+    ...(source.ACCESS_DEV_IDENTITY ? { ACCESS_DEV_IDENTITY: source.ACCESS_DEV_IDENTITY } : {}),
+    ...(source.POLICY_AUD ? { POLICY_AUD: source.POLICY_AUD } : {}),
+    ...(source.TEAM_DOMAIN ? { TEAM_DOMAIN: source.TEAM_DOMAIN } : {})
+  };
+}
 
 function json(payload: JsonValue, status: number, headers: Record<string, string> = {}): Response {
   return Response.json(payload, {
@@ -46,9 +64,11 @@ export async function handleApiRequest(
   }
 
   try {
-    const authOptions =
-      options.allowDevBypass === true ? ({ allowDevBypass: true } as const) : {};
-    const context = await authenticateRequest(request, env, authOptions);
+    const context = await authenticateRequest(
+      request,
+      env,
+      options.allowDevBypass ? { allowDevBypass: true } : undefined
+    );
 
     if (url.pathname === voiceSessionPath) {
       if (request.method !== "POST") {
@@ -65,11 +85,6 @@ export async function handleApiRequest(
       return json(descriptor, 200);
     }
 
-    const route = parseSessionRoute(url.pathname);
-    if (!route) {
-      return json({ error: "Not found" }, 404);
-    }
-
     const payload = await handleSessionsRequest(request, context, options.store);
     return json(payload as JsonValue, 200);
   } catch (error) {
@@ -79,22 +94,6 @@ export async function handleApiRequest(
 
 function handleApiError(error: unknown, url: URL): Response {
   if (error instanceof HttpError) {
-    if (error.message === "Unauthorized") {
-      return json({ error: "Unauthorized" }, 403);
-    }
-
-    if (error.message === "Session not found") {
-      return json({ error: "Session not found" }, 404);
-    }
-
-    if (error.message.startsWith("Unsupported voice session intent")) {
-      return json({ error: error.message }, 400);
-    }
-
-    if (error.message.includes("request") && error.message.includes("invalid")) {
-      return json({ error: error.message }, 400);
-    }
-
     if (error.message === "Missing OPENAI_API_KEY") {
       return json({ error: "Server is missing OPENAI_API_KEY." }, 500);
     }

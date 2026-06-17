@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { TutorSessionSummary } from "../../session-types.js";
+import {
+  toTutorSessionSummary,
+  type TutorSessionRecord,
+  type TutorSessionSummary
+} from "../../session-types.js";
+import { errorMessage } from "../lib/error-message.js";
+import { formatEventEntry } from "../lib/format-event-entry.js";
 import {
   createSession,
   getSession,
@@ -9,10 +15,7 @@ import {
   updateSession
 } from "../lib/session-api.js";
 import type { LoadedSessionContext, SessionListError, StatusTone } from "../types.js";
-import {
-  activeSessionStorageKey,
-  defaultImagePrompt
-} from "../types.js";
+import { activeSessionStorageKey } from "../types.js";
 
 type UseTutorSessionsOptions = {
   clearEventLog: () => void;
@@ -24,12 +27,6 @@ type UseTutorSessionsOptions = {
   setStatus: (message: string, tone?: StatusTone) => void;
   stopVoiceSession: () => void;
 };
-
-function formatEventEntry(createdAt: string, message: string, value: unknown): string {
-  const time = new Date(createdAt).toLocaleTimeString();
-  const renderedValue = value === null || value === undefined ? "" : ` ${JSON.stringify(value, null, 2)}`;
-  return `[${time}] ${message}${renderedValue}`;
-}
 
 function toSessionListError(error: unknown): SessionListError {
   if (error instanceof SessionApiError) {
@@ -48,8 +45,39 @@ function toSessionListError(error: unknown): SessionListError {
 
   return {
     kind: "unknown",
-    message: error instanceof Error ? error.message : "Could not load sessions."
+    message: errorMessage(error, "Could not load sessions.")
   };
+}
+
+function toLoadedSessionContext(
+  session: Pick<TutorSessionRecord, "imageMeta" | "imageName" | "imagePrompt">
+): LoadedSessionContext {
+  return {
+    imageMeta: session.imageMeta,
+    imageName: session.imageName,
+    imagePrompt: session.imagePrompt
+  };
+}
+
+function readStoredActiveSessionId(): string | undefined {
+  if (typeof sessionStorage === "undefined") {
+    return undefined;
+  }
+
+  return sessionStorage.getItem(activeSessionStorageKey) ?? undefined;
+}
+
+function writeStoredActiveSessionId(sessionId: string | undefined): void {
+  if (typeof sessionStorage === "undefined") {
+    return;
+  }
+
+  if (sessionId) {
+    sessionStorage.setItem(activeSessionStorageKey, sessionId);
+    return;
+  }
+
+  sessionStorage.removeItem(activeSessionStorageKey);
 }
 
 export function useTutorSessions({
@@ -77,13 +105,7 @@ export function useTutorSessions({
   notifyEventLogged: () => void;
 } {
   const [sessions, setSessions] = useState<TutorSessionSummary[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => {
-    if (typeof sessionStorage === "undefined") {
-      return undefined;
-    }
-
-    return sessionStorage.getItem(activeSessionStorageKey) ?? undefined;
-  });
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(readStoredActiveSessionId);
   const [isLoading, setIsLoading] = useState(true);
   const [isHydrating, setIsHydrating] = useState(true);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -93,17 +115,7 @@ export function useTutorSessions({
 
   const persistActiveSessionId = useCallback((sessionId: string | undefined) => {
     setActiveSessionId(sessionId);
-
-    if (typeof sessionStorage === "undefined") {
-      return;
-    }
-
-    if (sessionId) {
-      sessionStorage.setItem(activeSessionStorageKey, sessionId);
-      return;
-    }
-
-    sessionStorage.removeItem(activeSessionStorageKey);
+    writeStoredActiveSessionId(sessionId);
   }, []);
 
   const notifyEventLogged = useCallback(() => {
@@ -114,16 +126,12 @@ export function useTutorSessions({
     async (sessionId: string) => {
       const detail = await getSession(sessionId);
       const entries = detail.events.map((event) =>
-        formatEventEntry(event.createdAt, event.message, event.value)
+        formatEventEntry(event.createdAt, event.message, event.value, { omitNullValue: true })
       );
 
       setEventCount(detail.events.length);
       loadEventLog(entries);
-      loadSessionContext({
-        imageMeta: detail.session.imageMeta,
-        imageName: detail.session.imageName,
-        imagePrompt: detail.session.imagePrompt ?? defaultImagePrompt
-      });
+      loadSessionContext(toLoadedSessionContext(detail.session));
     },
     [loadEventLog, loadSessionContext]
   );
@@ -144,12 +152,8 @@ export function useTutorSessions({
     }
   }, []);
 
-  const selectSession = useCallback(
-    async (sessionId: string) => {
-      if (sessionId === activeSessionId) {
-        return;
-      }
-
+  const runSessionSwitch = useCallback(
+    async <T>(task: () => Promise<T>): Promise<T> => {
       setIsSwitching(true);
       setListError(null);
 
@@ -158,9 +162,7 @@ export function useTutorSessions({
           stopVoiceSession();
         }
 
-        await hydrateSession(sessionId);
-        persistActiveSessionId(sessionId);
-        setStatus("Session loaded.", "ready");
+        return await task();
       } catch (error) {
         const mapped = toSessionListError(error);
         setListError(mapped);
@@ -170,62 +172,57 @@ export function useTutorSessions({
         setIsSwitching(false);
       }
     },
+    [getIsVoiceRunning, setStatus, stopVoiceSession]
+  );
+
+  const selectSession = useCallback(
+    async (sessionId: string) => {
+      if (sessionId === activeSessionId) {
+        return;
+      }
+
+      await runSessionSwitch(async () => {
+        await hydrateSession(sessionId);
+        persistActiveSessionId(sessionId);
+        setStatus("Session loaded.", "ready");
+      });
+    },
     [
       activeSessionId,
-      getIsVoiceRunning,
       hydrateSession,
       persistActiveSessionId,
-      setStatus,
-      stopVoiceSession
+      runSessionSwitch,
+      setStatus
     ]
   );
 
-  const createNewSession = useCallback(async () => {
-    setIsSwitching(true);
-    setListError(null);
-
-    try {
-      if (getIsVoiceRunning()) {
-        stopVoiceSession();
-      }
-
+  const createNewSession = useCallback(() => {
+    return runSessionSwitch(async () => {
       const created = await createSession();
       const nextSessions = await refreshSessions();
-      const ordered = nextSessions.some((session) => session.id === created.id)
-        ? nextSessions
-        : [created, ...nextSessions];
-      setSessions(ordered);
+
+      if (!nextSessions.some((session) => session.id === created.id)) {
+        setSessions([created, ...nextSessions]);
+      }
 
       clearEventLog();
       resetProblemImage();
-      loadSessionContext({
-        imageMeta: null,
-        imageName: null,
-        imagePrompt: defaultImagePrompt
-      });
+      loadSessionContext(toLoadedSessionContext(created));
       setEventCount(0);
       persistActiveSessionId(created.id);
       setStatus("New session ready.", "ready");
       logEvent("Session created", { sessionId: created.id, title: created.title }, created.id);
       return created.id;
-    } catch (error) {
-      const mapped = toSessionListError(error);
-      setListError(mapped);
-      setStatus(mapped.message, "error");
-      throw error;
-    } finally {
-      setIsSwitching(false);
-    }
+    });
   }, [
     clearEventLog,
-    getIsVoiceRunning,
     loadSessionContext,
     logEvent,
     persistActiveSessionId,
     refreshSessions,
     resetProblemImage,
-    setStatus,
-    stopVoiceSession
+    runSessionSwitch,
+    setStatus
   ]);
 
   const updateActiveSession = useCallback(
@@ -237,15 +234,7 @@ export function useTutorSessions({
       const updated = await updateSession(activeSessionId, request);
       setSessions((previous) =>
         previous.map((session) =>
-          session.id === updated.id
-            ? {
-                createdAt: updated.createdAt,
-                id: updated.id,
-                status: updated.status,
-                title: updated.title,
-                updatedAt: updated.updatedAt
-              }
-            : session
+          session.id === updated.id ? toTutorSessionSummary(updated) : session
         )
       );
     },
@@ -270,9 +259,7 @@ export function useTutorSessions({
           return;
         }
 
-        const storedId = typeof sessionStorage !== "undefined"
-          ? sessionStorage.getItem(activeSessionStorageKey)
-          : null;
+        const storedId = readStoredActiveSessionId();
         const targetId =
           storedId && nextSessions.some((session) => session.id === storedId)
             ? storedId

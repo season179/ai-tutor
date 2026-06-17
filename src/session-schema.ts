@@ -11,6 +11,7 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
+import { parseObjectWithSchema } from "./schema-parser.js";
 
 const tutorSessionStatusSchema = z.enum(["draft", "active", "ended"]) satisfies z.ZodType<TutorSessionStatus>;
 
@@ -33,12 +34,7 @@ export const updateTutorSessionRequestSchema = z
     title: z.string().trim().min(1).max(120).optional()
   })
   .refine(
-    (value) =>
-      value.title !== undefined ||
-      value.status !== undefined ||
-      value.imagePrompt !== undefined ||
-      value.imageName !== undefined ||
-      value.imageMeta !== undefined,
+    (value) => Object.values(value).some((field) => field !== undefined),
     { message: "At least one field must be provided" }
   );
 
@@ -76,31 +72,15 @@ export const tutorSessionDetailSchema = z.object({
 }) satisfies z.ZodType<TutorSessionDetail>;
 
 export function parseCreateTutorSessionRequest(value: unknown): CreateTutorSessionRequest {
-  const parsed = parseWithSchema(createTutorSessionRequestSchema, value, "Create session request");
-  return parsed.title === undefined ? {} : { title: parsed.title };
+  return omitUndefinedProperties(
+    parseWithSchema(createTutorSessionRequestSchema, value, "Create session request")
+  ) as CreateTutorSessionRequest;
 }
 
 export function parseUpdateTutorSessionRequest(value: unknown): UpdateTutorSessionRequest {
-  const parsed = parseWithSchema(updateTutorSessionRequestSchema, value, "Update session request");
-  const request: UpdateTutorSessionRequest = {};
-
-  if (parsed.title !== undefined) {
-    request.title = parsed.title;
-  }
-  if (parsed.status !== undefined) {
-    request.status = parsed.status;
-  }
-  if (parsed.imagePrompt !== undefined) {
-    request.imagePrompt = parsed.imagePrompt;
-  }
-  if (parsed.imageName !== undefined) {
-    request.imageName = parsed.imageName;
-  }
-  if (parsed.imageMeta !== undefined) {
-    request.imageMeta = parsed.imageMeta;
-  }
-
-  return request;
+  return omitUndefinedProperties(
+    parseWithSchema(updateTutorSessionRequestSchema, value, "Update session request")
+  ) as UpdateTutorSessionRequest;
 }
 
 export function parseAppendSessionEventRequest(value: unknown): AppendSessionEventRequest {
@@ -108,15 +88,12 @@ export function parseAppendSessionEventRequest(value: unknown): AppendSessionEve
 }
 
 function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be a JSON object.`);
-  }
+  return parseObjectWithSchema(schema, value, {
+    invalid: `${label} was invalid.`,
+    notObject: `${label} must be a JSON object.`
+  });
+}
 
-  const result = schema.safeParse(value);
-
-  if (!result.success) {
-    throw new Error(`${label} was invalid.`);
-  }
-
-  return result.data;
+function omitUndefinedProperties<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T;
 }

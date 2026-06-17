@@ -7,15 +7,24 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
-import { maxSessionEvents } from "./session-types.js";
-import type { SessionStore } from "./session-store.js";
+import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
+import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
 import {
-  defaultTitle,
+  createSessionEventRecord,
+  createTutorSessionRecord,
   mapD1EventRow,
   mapD1SessionRow,
   nowIso,
+  rowStringOrNull,
   serializeImageMeta
 } from "./memory-session-store.js";
+
+const tutorSessionColumns =
+  "id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at";
+
+function d1Rows(result: D1Result): Record<string, unknown>[] {
+  return (result.results ?? []) as Record<string, unknown>[];
+}
 
 export class D1SessionStore implements SessionStore {
   constructor(private readonly db: D1Database) {}
@@ -27,7 +36,7 @@ export class D1SessionStore implements SessionStore {
   ): Promise<SessionEventRecord> {
     const session = await this.getOwnedSessionRow(ownerKey, sessionId);
     if (!session) {
-      throw new Error("Session not found");
+      throw sessionStoreNotFoundError();
     }
 
     const createdAt = nowIso();
@@ -63,40 +72,31 @@ export class D1SessionStore implements SessionStore {
       .bind(sessionId, maxSessionEvents)
       .run();
 
-    return {
-      createdAt,
-      id: eventId,
-      message: request.message,
-      sessionId,
-      value: request.value ?? null
-    };
+    return createSessionEventRecord(sessionId, eventId, createdAt, request);
   }
 
   async createSession(ownerKey: string, request: CreateTutorSessionRequest = {}): Promise<TutorSessionRecord> {
-    const createdAt = nowIso();
-    const id = crypto.randomUUID();
-    const title = request.title?.trim() || defaultTitle(createdAt);
+    const session = createTutorSessionRecord(ownerKey, request, nowIso(), crypto.randomUUID());
 
     await this.db
       .prepare(
-        `INSERT INTO tutor_sessions (
-          id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
-        ) VALUES (?, ?, ?, 'draft', NULL, NULL, NULL, ?, ?)`
+        `INSERT INTO tutor_sessions (${tutorSessionColumns})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .bind(id, ownerKey, title, createdAt, createdAt)
+      .bind(
+        session.id,
+        session.ownerKey,
+        session.title,
+        session.status,
+        session.imagePrompt,
+        session.imageName,
+        serializeImageMeta(session.imageMeta),
+        session.createdAt,
+        session.updatedAt
+      )
       .run();
 
-    return {
-      createdAt,
-      id,
-      imageMeta: null,
-      imageName: null,
-      imagePrompt: null,
-      ownerKey,
-      status: "draft",
-      title,
-      updatedAt: createdAt
-    };
+    return session;
   }
 
   async getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null> {
@@ -116,7 +116,7 @@ export class D1SessionStore implements SessionStore {
       .bind(sessionId, maxSessionEvents)
       .all();
 
-    const events = (eventsResult.results ?? []).map((row) => mapD1EventRow(row as Record<string, unknown>));
+    const events = d1Rows(eventsResult).map(mapD1EventRow);
 
     return {
       events,
@@ -127,7 +127,7 @@ export class D1SessionStore implements SessionStore {
   async listSessions(ownerKey: string): Promise<TutorSessionSummary[]> {
     const result = await this.db
       .prepare(
-        `SELECT id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
+        `SELECT ${tutorSessionColumns}
          FROM tutor_sessions
          WHERE owner_key = ?
          ORDER BY updated_at DESC`
@@ -135,16 +135,7 @@ export class D1SessionStore implements SessionStore {
       .bind(ownerKey)
       .all();
 
-    return (result.results ?? []).map((row) => {
-      const session = mapD1SessionRow(row as Record<string, unknown>);
-      return {
-        createdAt: session.createdAt,
-        id: session.id,
-        status: session.status,
-        title: session.title,
-        updatedAt: session.updatedAt
-      };
-    });
+    return d1Rows(result).map((row) => toTutorSessionSummary(mapD1SessionRow(row)));
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
@@ -162,19 +153,12 @@ export class D1SessionStore implements SessionStore {
       return null;
     }
 
-    const updatedAt = nowIso();
-    const title = request.title !== undefined ? request.title.trim() : String(existing.title);
-    const status = request.status ?? (existing.status as TutorSessionRecord["status"]);
-    const imagePrompt =
-      request.imagePrompt !== undefined ? request.imagePrompt : existing.image_prompt ? String(existing.image_prompt) : null;
-    const imageName =
-      request.imageName !== undefined ? request.imageName : existing.image_name ? String(existing.image_name) : null;
+    const existingSession = mapD1SessionRow(existing);
+    const updated = applyTutorSessionUpdate(existingSession, request, nowIso());
     const imageMetaJson =
       request.imageMeta !== undefined
-        ? serializeImageMeta(request.imageMeta)
-        : existing.image_meta_json
-          ? String(existing.image_meta_json)
-          : null;
+        ? serializeImageMeta(updated.imageMeta)
+        : rowStringOrNull(existing.image_meta_json);
 
     await this.db
       .prepare(
@@ -182,18 +166,19 @@ export class D1SessionStore implements SessionStore {
          SET title = ?, status = ?, image_prompt = ?, image_name = ?, image_meta_json = ?, updated_at = ?
          WHERE id = ? AND owner_key = ?`
       )
-      .bind(title, status, imagePrompt, imageName, imageMetaJson, updatedAt, sessionId, ownerKey)
+      .bind(
+        updated.title,
+        updated.status,
+        updated.imagePrompt,
+        updated.imageName,
+        imageMetaJson,
+        updated.updatedAt,
+        sessionId,
+        ownerKey
+      )
       .run();
 
-    return mapD1SessionRow({
-      ...existing,
-      image_meta_json: imageMetaJson,
-      image_name: imageName,
-      image_prompt: imagePrompt,
-      status,
-      title,
-      updated_at: updatedAt
-    });
+    return updated;
   }
 
   private async getOwnedSessionRow(
@@ -202,7 +187,7 @@ export class D1SessionStore implements SessionStore {
   ): Promise<Record<string, unknown> | null> {
     const row = await this.db
       .prepare(
-        `SELECT id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at
+        `SELECT ${tutorSessionColumns}
          FROM tutor_sessions
          WHERE id = ? AND owner_key = ?`
       )

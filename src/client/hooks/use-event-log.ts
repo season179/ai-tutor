@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState, type RefObject } from "react";
+import { useCallback, useState, type RefObject } from "react";
 
+import { formatEventEntry } from "../lib/format-event-entry.js";
 import { appendSessionEvent } from "../lib/session-api.js";
 
 export function useEventLog(
@@ -12,13 +13,9 @@ export function useEventLog(
   loadEventLog: (entries: string[]) => void;
 } {
   const [entries, setEntries] = useState<string[]>([]);
-  const entriesRef = useRef(entries);
-  entriesRef.current = entries;
 
   const appendLocalEntry = useCallback((message: string, value?: unknown) => {
-    const time = new Date().toLocaleTimeString();
-    const renderedValue = value === undefined ? "" : ` ${JSON.stringify(value, null, 2)}`;
-    setEntries((previous) => [`[${time}] ${message}${renderedValue}`, ...previous]);
+    setEntries((previous) => [formatEventEntry(new Date(), message, value), ...previous]);
   }, []);
 
   const logEvent = useCallback(

@@ -54,3 +54,33 @@ export type AppendSessionEventRequest = {
   message: string;
   value?: unknown;
 };
+
+export function toTutorSessionSummary(session: TutorSessionRecord): TutorSessionSummary {
+  return {
+    createdAt: session.createdAt,
+    id: session.id,
+    status: session.status,
+    title: session.title,
+    updatedAt: session.updatedAt
+  };
+}
+
+function updateValue<T>(value: T | undefined, fallback: T): T {
+  return value === undefined ? fallback : value;
+}
+
+export function applyTutorSessionUpdate(
+  session: TutorSessionRecord,
+  request: UpdateTutorSessionRequest,
+  updatedAt: string
+): TutorSessionRecord {
+  return {
+    ...session,
+    imageMeta: updateValue(request.imageMeta, session.imageMeta),
+    imageName: updateValue(request.imageName, session.imageName),
+    imagePrompt: updateValue(request.imagePrompt, session.imagePrompt),
+    status: updateValue(request.status, session.status),
+    title: updateValue(request.title?.trim(), session.title),
+    updatedAt
+  };
+}

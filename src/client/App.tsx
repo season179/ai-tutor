@@ -10,6 +10,7 @@ import { useEventLog } from "./hooks/use-event-log.js";
 import { useProblemImage } from "./hooks/use-problem-image.js";
 import { useTutorSessions } from "./hooks/use-tutor-sessions.js";
 import { useVoiceSession } from "./hooks/use-voice-session.js";
+import { errorMessage } from "./lib/error-message.js";
 import type { LoadedSessionContext, StatusTone } from "./types.js";
 import { hasPriorActivity } from "./types.js";
 
@@ -70,12 +71,17 @@ export function App() {
   resetProblemImageRef.current = problemImage.resetProblemImage;
   onEventLoggedRef.current = tutorSessions.notifyEventLogged;
 
+  const activeSessionHasPriorActivity = hasPriorActivity(
+    tutorSessions.activeSession,
+    tutorSessions.eventCount
+  );
+
   const handleStart = () => {
-    const greet = !hasPriorActivity(tutorSessions.activeSession, tutorSessions.eventCount);
+    const greet = !activeSessionHasPriorActivity;
     startSession({ greet })
       .then(() => tutorSessions.refreshSessions())
       .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : "Unexpected error.", "error");
+        setStatus(errorMessage(error, "Unexpected error."), "error");
       });
   };
 
@@ -112,7 +118,7 @@ export function App() {
         <div className="main-grid">
           <VoiceSessionPanel
             audioRef={audioRef}
-            hasPriorActivity={hasPriorActivity(tutorSessions.activeSession, tutorSessions.eventCount)}
+            hasPriorActivity={activeSessionHasPriorActivity}
             isRunning={isRunning}
             onStart={handleStart}
             onStop={stopSession}

@@ -2,16 +2,23 @@ import { useCallback, useRef, useState } from "react";
 
 import type { SessionImageMeta } from "../../session-types.js";
 import type { VoicePreparedImage, VoiceUserTurn } from "../../voice-types.js";
+import { errorLogValue, errorMessage } from "../lib/error-message.js";
+import { getImageByteLimit, getImageResizeByteLimit } from "../lib/image-byte-limit.js";
 import {
   describePreparedImage,
-  getImageByteLimit,
-  imageJsonOverheadBytes,
   prepareImage,
+  preparedImageMimeType,
   type PreparedImage
 } from "../lib/image-preparation.js";
 import { updateSession } from "../lib/session-api.js";
 import type { LoadedSessionContext, StatusTone, TutorSessionState } from "../types.js";
 import { defaultImagePrompt } from "../types.js";
+
+const checkingImagePayloadMessage = "Checking image payload...";
+const chooseImageFirstMessage = "Choose an image first.";
+const noProblemImageMessage = "No problem image yet.";
+const problemImagePreparationFailedEvent = "Problem image preparation failed";
+const preparingProblemImageMessage = "Preparing problem image...";
 
 type UseProblemImageOptions = {
   activeSessionId: string | undefined;
@@ -26,7 +33,7 @@ function createVoicePreparedImage(image: PreparedImage): VoicePreparedImage {
   return {
     dataUrl: image.dataUrl,
     height: image.height,
-    mimeType: "image/jpeg",
+    mimeType: preparedImageMimeType,
     name: image.name,
     size: image.size,
     width: image.width
@@ -54,7 +61,7 @@ function describeImageMeta(image: PreparedImage): SessionImageMeta {
 
 function formatStoredImageMeta(meta: SessionImageMeta | null, name: string | null): string {
   if (!meta) {
-    return "No problem image yet.";
+    return noProblemImageMessage;
   }
 
   const label = name ? `${name} · ` : "";
@@ -84,36 +91,39 @@ export function useProblemImage({
   const [preparedImage, setPreparedImage] = useState<PreparedImage | undefined>(undefined);
   const [selectedImageFile, setSelectedImageFile] = useState<File | undefined>(undefined);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
-  const [imageMeta, setImageMeta] = useState("No problem image yet.");
-  const [emptyMessage, setEmptyMessage] = useState("No problem image yet.");
+  const [imageMeta, setImageMeta] = useState(noProblemImageMessage);
+  const [emptyMessage, setEmptyMessage] = useState(noProblemImageMessage);
   const [imagePrompt, setImagePrompt] = useState(defaultImagePrompt);
 
   const imagePreparationIdRef = useRef(0);
   const promptPersistTimeoutRef = useRef<number | undefined>(undefined);
 
-  const clearPreparedImage = useCallback((message = "No problem image yet.") => {
+  const clearPreparedImage = useCallback((message = noProblemImageMessage) => {
     setSelectedImageFile(undefined);
     setPreparedImage(undefined);
-    setEmptyMessage("No problem image yet.");
+    setEmptyMessage(noProblemImageMessage);
     setImageMeta(message);
   }, []);
 
-  const loadSessionContext = useCallback((context: LoadedSessionContext) => {
+  const cancelCurrentImagePreparation = useCallback(() => {
     imagePreparationIdRef.current += 1;
     setIsPreparingImage(false);
+  }, []);
+
+  const loadSessionContext = useCallback((context: LoadedSessionContext) => {
+    cancelCurrentImagePreparation();
     setPreparedImage(undefined);
     setSelectedImageFile(undefined);
     setImagePrompt(context.imagePrompt || defaultImagePrompt);
-    setEmptyMessage(context.imageMeta ? "Saved problem image metadata loaded." : "No problem image yet.");
+    setEmptyMessage(context.imageMeta ? "Saved problem image metadata loaded." : noProblemImageMessage);
     setImageMeta(formatStoredImageMeta(context.imageMeta, context.imageName));
-  }, []);
+  }, [cancelCurrentImagePreparation]);
 
   const resetProblemImage = useCallback(() => {
-    imagePreparationIdRef.current += 1;
-    setIsPreparingImage(false);
+    cancelCurrentImagePreparation();
     clearPreparedImage();
     setImagePrompt(defaultImagePrompt);
-  }, [clearPreparedImage]);
+  }, [cancelCurrentImagePreparation, clearPreparedImage]);
 
   const persistImageContext = useCallback(
     async (image: PreparedImage | undefined, prompt: string) => {
@@ -137,8 +147,8 @@ export function useProblemImage({
       setSelectedImageFile(file);
       setPreparedImage(undefined);
       setIsPreparingImage(true);
-      setEmptyMessage("Preparing problem image...");
-      setImageMeta("Preparing problem image...");
+      setEmptyMessage(preparingProblemImageMessage);
+      setImageMeta(preparingProblemImageMessage);
 
       try {
         const image = await prepareImage(file, getImageByteLimit(getPayloadLimitBytes()));
@@ -153,7 +163,7 @@ export function useProblemImage({
           prepared: {
             bytes: image.size,
             height: image.height,
-            mime: "image/jpeg",
+            mime: preparedImageMimeType,
             width: image.width
           },
           source: {
@@ -169,8 +179,8 @@ export function useProblemImage({
           return;
         }
 
-        clearPreparedImage(error instanceof Error ? error.message : "Could not prepare the problem image.");
-        logEvent("Problem image preparation failed", error instanceof Error ? error.message : error);
+        clearPreparedImage(errorMessage(error, "Could not prepare the problem image."));
+        logEvent(problemImagePreparationFailedEvent, errorLogValue(error));
       } finally {
         if (preparationId === imagePreparationIdRef.current) {
           setIsPreparingImage(false);
@@ -189,7 +199,7 @@ export function useProblemImage({
       }
 
       prepareSelectedImage(file).catch((error: unknown) => {
-        logEvent("Problem image preparation failed", error instanceof Error ? error.message : error);
+        logEvent(problemImagePreparationFailedEvent, errorLogValue(error));
       });
     },
     [clearPreparedImage, imagePrompt, logEvent, persistImageContext, prepareSelectedImage]
@@ -211,58 +221,54 @@ export function useProblemImage({
   );
 
   const getSendableImage = useCallback(
-    async (defaultPrompt: string, prompt: string): Promise<PreparedImage> => {
-      if (!preparedImage) {
-        throw new Error("Choose an image first.");
-      }
-
+    async (image: PreparedImage, prompt: string): Promise<PreparedImage> => {
       const messageLimit = getPayloadLimitBytes();
 
       if (!messageLimit) {
-        return preparedImage;
+        return image;
       }
 
-      const payloadBytes = estimateVoiceUserTurnBytes(preparedImage, prompt);
+      const payloadBytes = estimateVoiceUserTurnBytes(image, prompt);
 
       if (payloadBytes <= messageLimit) {
-        return preparedImage;
+        return image;
       }
 
       if (!selectedImageFile) {
         throw new Error("The prepared image is too large for this WebRTC session.");
       }
 
-      const targetBytes = Math.max(80_000, Math.floor((messageLimit - imageJsonOverheadBytes) * 0.72));
-      const image = await prepareImage(selectedImageFile, targetBytes);
-      const resizedBytes = estimateVoiceUserTurnBytes(image, prompt);
+      const targetBytes = getImageResizeByteLimit(messageLimit);
+      const resizedImage = await prepareImage(selectedImageFile, targetBytes);
+      const resizedBytes = estimateVoiceUserTurnBytes(resizedImage, prompt);
 
       if (resizedBytes > messageLimit) {
         throw new Error("The image is too large for this WebRTC session, even after resizing.");
       }
 
-      setPreparedImage(image);
-      setImageMeta(describePreparedImage(image));
-      return image;
+      setPreparedImage(resizedImage);
+      setImageMeta(describePreparedImage(resizedImage));
+      return resizedImage;
     },
-    [getPayloadLimitBytes, preparedImage, selectedImageFile]
+    [getPayloadLimitBytes, selectedImageFile]
   );
 
   const sendImage = useCallback(async () => {
     if (!preparedImage) {
-      throw new Error("Choose an image first.");
+      throw new Error(chooseImageFirstMessage);
     }
 
     setIsPreparingImage(true);
     setImageMeta(
-      getSession()?.adapter.status === "connected" ? "Checking image payload..." : "Starting tutoring..."
+      getSession()?.adapter.status === "connected" ? checkingImagePayloadMessage : "Starting tutoring..."
     );
 
     try {
       const activeSession = await ensureSessionReadyForImage();
       const fallbackPrompt = activeSession.descriptor.tutorPolicy.defaultImagePrompt;
       const prompt = imagePrompt.trim() || fallbackPrompt;
-      setImageMeta("Checking image payload...");
-      const image = await getSendableImage(fallbackPrompt, prompt);
+      setImageMeta(checkingImagePayloadMessage);
+      const image = await getSendableImage(preparedImage, prompt);
 
       activeSession.adapter.sendUserTurn(createVoiceUserTurn(image, prompt));
       activeSession.adapter.requestReply(activeSession.descriptor.tutorPolicy.imageResponseInstructions);
@@ -277,7 +283,7 @@ export function useProblemImage({
         width: image.width
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not send the problem image.";
+      const message = errorMessage(error, "Could not send the problem image.");
       setStatus(message, "error");
       setImageMeta(message);
       logEvent("Problem image send failed", message);

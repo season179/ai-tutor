@@ -5,6 +5,7 @@ import {
   defaultRealtimeVoice,
   defaultSafetyIdentifier
 } from "./realtime-token.js";
+import { isJsonObject } from "./schema-parser.js";
 import { tutorPolicy } from "./tutor-policy.js";
 import { serializeOpenAIRealtimeSessionDescriptor } from "./voice-session-schema.js";
 import type {
@@ -38,7 +39,7 @@ type OpenAIRealtimeSessionServiceOptions = {
   voice: string;
 };
 
-const defaultVoiceBackend: VoiceBackend = "openai-realtime";
+export const defaultVoiceBackend: VoiceBackend = "openai-realtime";
 
 export function createVoiceSessionService(env: VoiceSessionServiceEnv): VoiceSessionService {
   const backend = readVoiceBackend(env.VOICE_BACKEND);
@@ -83,6 +84,7 @@ class OpenAIRealtimeSessionService implements VoiceSessionService {
       safetyIdentifierSeed: this.createSafetyIdentifierSeed(context.callerKey),
       voice: this.options.voice
     });
+    const session = readOpenAISession(payload);
 
     return serializeOpenAIRealtimeSessionDescriptor({
       capabilities: {
@@ -93,11 +95,11 @@ class OpenAIRealtimeSessionService implements VoiceSessionService {
         payloadLimitBytes: null
       },
       clientSecret: readOpenAIClientSecret(payload),
-      model: readOpenAISessionString(payload, "model") ?? this.options.model,
+      model: asString(session.model) ?? this.options.model,
       provider: "openai-realtime",
       sessionId: context.sessionId ?? crypto.randomUUID(),
       tutorPolicy,
-      voice: readOpenAISessionVoice(payload) ?? this.options.voice
+      voice: readOpenAISessionVoice(session) ?? this.options.voice
     });
   }
 
@@ -137,28 +139,19 @@ function readOpenAIClientSecret(payload: JsonValue): string {
   return secret;
 }
 
-function readOpenAISessionString(payload: JsonValue, key: string): string | undefined {
-  const root = asRecord(payload);
-  const session = asRecord(root.session);
-
-  return asString(session[key]);
-}
-
-function readOpenAISessionVoice(payload: JsonValue): string | undefined {
-  const root = asRecord(payload);
-  const session = asRecord(root.session);
+function readOpenAISessionVoice(session: Record<string, JsonValue>): string | undefined {
   const audio = asRecord(session.audio);
   const output = asRecord(audio.output);
 
   return asString(output.voice) ?? asString(session.voice);
 }
 
-function asRecord(value: JsonValue | undefined): Record<string, JsonValue> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
+function readOpenAISession(payload: JsonValue): Record<string, JsonValue> {
+  return asRecord(asRecord(payload).session);
+}
 
-  return value;
+function asRecord(value: JsonValue | undefined): Record<string, JsonValue> {
+  return isJsonObject(value) ? (value as Record<string, JsonValue>) : {};
 }
 
 function asString(value: JsonValue | undefined): string | undefined {

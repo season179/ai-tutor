@@ -27,13 +27,28 @@ export function parseDevIdentity(value: string | undefined): AccessIdentity | un
       return undefined;
     }
 
-    return {
-      sub: parsed.sub.trim(),
-      ...(typeof parsed.email === "string" && parsed.email ? { email: parsed.email } : {})
-    };
+    return createAccessIdentity(parsed.sub.trim(), parsed.email);
   } catch {
     return undefined;
   }
+}
+
+function createAccessIdentity(sub: string, email: unknown): AccessIdentity {
+  return {
+    sub,
+    ...(typeof email === "string" && email ? { email } : {})
+  };
+}
+
+function createRequestContext(identity: AccessIdentity): RequestContext {
+  return {
+    identity,
+    ownerKey: buildOwnerKey(identity.sub)
+  };
+}
+
+function unauthorized(): HttpError {
+  return new HttpError(403, "Unauthorized");
 }
 
 function normalizeTeamDomain(teamDomain: string): string {
@@ -48,7 +63,7 @@ export async function verifyAccessJwt(
   const policyAud = env.POLICY_AUD?.trim();
 
   if (!teamDomain || !policyAud) {
-    throw new HttpError(403, "Unauthorized");
+    throw unauthorized();
   }
 
   const issuer = normalizeTeamDomain(teamDomain);
@@ -61,23 +76,14 @@ export async function verifyAccessJwt(
     });
 
     const sub = typeof payload.sub === "string" ? payload.sub.trim() : "";
-    if (!sub) {
-      throw new HttpError(403, "Unauthorized");
+    if (sub) {
+      return createAccessIdentity(sub, payload.email);
     }
-
-    const email = typeof payload.email === "string" && payload.email ? payload.email : undefined;
-
-    return {
-      sub,
-      ...(email ? { email } : {})
-    };
-  } catch (error) {
-    if (error instanceof HttpError) {
-      throw error;
-    }
-
-    throw new HttpError(403, "Unauthorized");
+  } catch {
+    throw unauthorized();
   }
+
+  throw unauthorized();
 }
 
 export async function authenticateRequest(
@@ -89,21 +95,15 @@ export async function authenticateRequest(
 
   if (token) {
     const identity = await verifyAccessJwt(token, env);
-    return {
-      identity,
-      ownerKey: buildOwnerKey(identity.sub)
-    };
+    return createRequestContext(identity);
   }
 
   if (options.allowDevBypass) {
     const identity = parseDevIdentity(env.ACCESS_DEV_IDENTITY);
     if (identity) {
-      return {
-        identity,
-        ownerKey: buildOwnerKey(identity.sub)
-      };
+      return createRequestContext(identity);
     }
   }
 
-  throw new HttpError(403, "Unauthorized");
+  throw unauthorized();
 }

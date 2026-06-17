@@ -1,4 +1,4 @@
-import { HttpError } from "./http-error.js";
+import { HttpError, sessionNotFoundHttpError } from "./http-error.js";
 import {
   parseAppendSessionEventRequest,
   parseCreateTutorSessionRequest,
@@ -7,8 +7,17 @@ import {
 import type { SessionStore } from "./session-store.js";
 import { sessionsPath } from "./session-types.js";
 import type { RequestContext } from "./request-context.js";
+import { readLimitedTextBody } from "./read-limited-text.js";
 
-const maxRequestBytes = 16_384;
+export const maxJsonRequestBodyBytes = 16_384;
+
+function requireSessionResult<T>(value: T | null): T {
+  if (value === null) {
+    throw sessionNotFoundHttpError();
+  }
+
+  return value;
+}
 
 export async function listSessions(context: RequestContext, store: SessionStore) {
   return store.listSessions(context.ownerKey);
@@ -28,12 +37,7 @@ export async function getSession(
   context: RequestContext,
   store: SessionStore
 ) {
-  const detail = await store.getSession(context.ownerKey, sessionId);
-  if (!detail) {
-    throw new HttpError(404, "Session not found");
-  }
-
-  return detail;
+  return requireSessionResult(await store.getSession(context.ownerKey, sessionId));
 }
 
 export async function updateSession(
@@ -43,12 +47,7 @@ export async function updateSession(
   store: SessionStore
 ) {
   const request = parseUpdateTutorSessionRequest(body);
-  const updated = await store.updateSession(context.ownerKey, sessionId, request);
-  if (!updated) {
-    throw new HttpError(404, "Session not found");
-  }
-
-  return updated;
+  return requireSessionResult(await store.updateSession(context.ownerKey, sessionId, request));
 }
 
 export async function appendSessionEvent(
@@ -58,15 +57,10 @@ export async function appendSessionEvent(
   store: SessionStore
 ) {
   const request = parseAppendSessionEventRequest(body);
-  const exists = await store.sessionExists(context.ownerKey, sessionId);
-  if (!exists) {
-    throw new HttpError(404, "Session not found");
-  }
-
   try {
     return await store.appendEvent(context.ownerKey, sessionId, request);
   } catch {
-    throw new HttpError(404, "Session not found");
+    throw sessionNotFoundHttpError();
   }
 }
 
@@ -98,36 +92,15 @@ export function parseSessionRoute(pathname: string):
   return null;
 }
 
-export async function readJsonBody(request: Request, maxBytes = maxRequestBytes): Promise<unknown> {
-  const reader = request.body?.getReader();
+export async function readJsonBody(request: Request, maxBytes = maxJsonRequestBodyBytes): Promise<unknown> {
+  const text = await readLimitedTextBody(
+    request.body,
+    maxBytes,
+    () => new HttpError(413, "Request body was too large")
+  );
 
-  if (!reader) {
+  if (text === null) {
     return null;
-  }
-
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let text = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        text += decoder.decode();
-        break;
-      }
-
-      bytesRead += value.byteLength;
-      if (bytesRead > maxBytes) {
-        await reader.cancel();
-        throw new HttpError(413, "Request body was too large");
-      }
-
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.releaseLock();
   }
 
   if (!text) {
@@ -151,32 +124,31 @@ export async function handleSessionsRequest(
     throw new HttpError(404, "Not found");
   }
 
-  if (route.kind === "collection") {
-    if (request.method === "GET") {
-      return listSessions(context, store);
-    }
+  switch (route.kind) {
+    case "collection":
+      if (request.method === "GET") {
+        return listSessions(context, store);
+      }
 
-    if (request.method === "POST") {
-      return createSession(await readJsonBody(request), context, store);
-    }
+      if (request.method === "POST") {
+        return createSession(await readJsonBody(request), context, store);
+      }
 
-    throw new HttpError(405, "Method not allowed");
-  }
+      break;
+    case "detail":
+      if (request.method === "GET") {
+        return getSession(route.sessionId, context, store);
+      }
 
-  if (route.kind === "detail") {
-    if (request.method === "GET") {
-      return getSession(route.sessionId, context, store);
-    }
+      if (request.method === "PATCH") {
+        return updateSession(route.sessionId, await readJsonBody(request), context, store);
+      }
 
-    if (request.method === "PATCH") {
-      return updateSession(route.sessionId, await readJsonBody(request), context, store);
-    }
-
-    throw new HttpError(405, "Method not allowed");
-  }
-
-  if (request.method === "POST") {
-    return appendSessionEvent(route.sessionId, await readJsonBody(request), context, store);
+      break;
+    case "events":
+      if (request.method === "POST") {
+        return appendSessionEvent(route.sessionId, await readJsonBody(request), context, store);
+      }
   }
 
   throw new HttpError(405, "Method not allowed");

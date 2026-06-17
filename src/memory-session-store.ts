@@ -9,8 +9,9 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
-import { maxSessionEvents } from "./session-types.js";
-import type { SessionStore } from "./session-store.js";
+import { isJsonObject } from "./schema-parser.js";
+import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
+import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
 
 type StoredSession = TutorSessionRecord & {
   events: SessionEventRecord[];
@@ -30,22 +31,35 @@ function defaultTitle(createdAt: string): string {
   })}`;
 }
 
-function parseImageMeta(value: string | null): SessionImageMeta | null {
+function rowStringOrNull(value: unknown): string | null {
+  return value ? String(value) : null;
+}
+
+function parseJsonOrNull(value: string | null): unknown {
   if (!value) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(value) as SessionImageMeta;
-    if (
-      typeof parsed.bytes === "number" &&
-      typeof parsed.height === "number" &&
-      typeof parsed.width === "number"
-    ) {
-      return parsed;
-    }
+    return JSON.parse(value) as unknown;
   } catch {
     return null;
+  }
+}
+
+function parseImageMeta(value: string | null): SessionImageMeta | null {
+  const parsed = parseJsonOrNull(value);
+  if (!isJsonObject(parsed)) {
+    return null;
+  }
+
+  const meta = parsed as SessionImageMeta;
+  if (
+    typeof meta.bytes === "number" &&
+    typeof meta.height === "number" &&
+    typeof meta.width === "number"
+  ) {
+    return meta;
   }
 
   return null;
@@ -55,13 +69,37 @@ function serializeImageMeta(value: SessionImageMeta | null | undefined): string 
   return value ? JSON.stringify(value) : null;
 }
 
-function toSummary(session: TutorSessionRecord): TutorSessionSummary {
+function createTutorSessionRecord(
+  ownerKey: string,
+  request: CreateTutorSessionRequest,
+  createdAt: string,
+  id: string
+): TutorSessionRecord {
   return {
-    createdAt: session.createdAt,
-    id: session.id,
-    status: session.status,
-    title: session.title,
-    updatedAt: session.updatedAt
+    createdAt,
+    id,
+    imageMeta: null,
+    imageName: null,
+    imagePrompt: null,
+    ownerKey,
+    status: "draft",
+    title: request.title?.trim() || defaultTitle(createdAt),
+    updatedAt: createdAt
+  };
+}
+
+function createSessionEventRecord(
+  sessionId: string,
+  id: number,
+  createdAt: string,
+  request: AppendSessionEventRequest
+): SessionEventRecord {
+  return {
+    createdAt,
+    id,
+    message: request.message,
+    sessionId,
+    value: request.value ?? null
   };
 }
 
@@ -74,15 +112,9 @@ export class MemorySessionStore implements SessionStore {
     sessionId: string,
     request: AppendSessionEventRequest
   ): Promise<SessionEventRecord> {
-    const session = await this.requireOwnedSession(ownerKey, sessionId);
+    const session = this.requireOwnedSession(ownerKey, sessionId);
     const createdAt = nowIso();
-    const event: SessionEventRecord = {
-      createdAt,
-      id: this.nextEventId++,
-      message: request.message,
-      sessionId,
-      value: request.value ?? null
-    };
+    const event = createSessionEventRecord(sessionId, this.nextEventId++, createdAt, request);
 
     session.events.unshift(event);
     session.events = session.events.slice(0, maxSessionEvents);
@@ -94,16 +126,8 @@ export class MemorySessionStore implements SessionStore {
   async createSession(ownerKey: string, request: CreateTutorSessionRequest = {}): Promise<TutorSessionRecord> {
     const createdAt = nowIso();
     const session: StoredSession = {
-      createdAt,
       events: [],
-      id: crypto.randomUUID(),
-      imageMeta: null,
-      imageName: null,
-      imagePrompt: null,
-      ownerKey,
-      status: "draft",
-      title: request.title?.trim() || defaultTitle(createdAt),
-      updatedAt: createdAt
+      ...createTutorSessionRecord(ownerKey, request, createdAt, crypto.randomUUID())
     };
 
     this.sessions.set(session.id, session);
@@ -111,8 +135,8 @@ export class MemorySessionStore implements SessionStore {
   }
 
   async getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null> {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.ownerKey !== ownerKey) {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session) {
       return null;
     }
 
@@ -126,12 +150,11 @@ export class MemorySessionStore implements SessionStore {
     return [...this.sessions.values()]
       .filter((session) => session.ownerKey === ownerKey)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-      .map((session) => toSummary(this.toRecord(session)));
+      .map((session) => toTutorSessionSummary(this.toRecord(session)));
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
-    const session = this.sessions.get(sessionId);
-    return Boolean(session && session.ownerKey === ownerKey);
+    return Boolean(this.getOwnedSession(ownerKey, sessionId));
   }
 
   async updateSession(
@@ -139,56 +162,31 @@ export class MemorySessionStore implements SessionStore {
     sessionId: string,
     request: UpdateTutorSessionRequest
   ): Promise<TutorSessionRecord | null> {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.ownerKey !== ownerKey) {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session) {
       return null;
     }
 
-    if (request.title !== undefined) {
-      session.title = request.title.trim();
-    }
-
-    if (request.status !== undefined) {
-      session.status = request.status;
-    }
-
-    if (request.imagePrompt !== undefined) {
-      session.imagePrompt = request.imagePrompt;
-    }
-
-    if (request.imageName !== undefined) {
-      session.imageName = request.imageName;
-    }
-
-    if (request.imageMeta !== undefined) {
-      session.imageMeta = request.imageMeta;
-    }
-
-    session.updatedAt = nowIso();
+    Object.assign(session, applyTutorSessionUpdate(this.toRecord(session), request, nowIso()));
     return this.toRecord(session);
   }
 
-  private async requireOwnedSession(ownerKey: string, sessionId: string): Promise<StoredSession> {
-    const session = this.sessions.get(sessionId);
-    if (!session || session.ownerKey !== ownerKey) {
-      throw new Error("Session not found");
+  private requireOwnedSession(ownerKey: string, sessionId: string): StoredSession {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session) {
+      throw sessionStoreNotFoundError();
     }
 
     return session;
   }
 
-  private toRecord(session: StoredSession): TutorSessionRecord {
-    return {
-      createdAt: session.createdAt,
-      id: session.id,
-      imageMeta: session.imageMeta,
-      imageName: session.imageName,
-      imagePrompt: session.imagePrompt,
-      ownerKey: session.ownerKey,
-      status: session.status,
-      title: session.title,
-      updatedAt: session.updatedAt
-    };
+  private getOwnedSession(ownerKey: string, sessionId: string): StoredSession | null {
+    const session = this.sessions.get(sessionId);
+    return session && session.ownerKey === ownerKey ? session : null;
+  }
+
+  private toRecord({ events: _events, ...session }: StoredSession): TutorSessionRecord {
+    return session;
   }
 }
 
@@ -196,9 +194,9 @@ export function mapD1SessionRow(row: Record<string, unknown>): TutorSessionRecor
   return {
     createdAt: String(row.created_at),
     id: String(row.id),
-    imageMeta: parseImageMeta(row.image_meta_json ? String(row.image_meta_json) : null),
-    imageName: row.image_name ? String(row.image_name) : null,
-    imagePrompt: row.image_prompt ? String(row.image_prompt) : null,
+    imageMeta: parseImageMeta(rowStringOrNull(row.image_meta_json)),
+    imageName: rowStringOrNull(row.image_name),
+    imagePrompt: rowStringOrNull(row.image_prompt),
     ownerKey: String(row.owner_key),
     status: row.status as TutorSessionStatus,
     title: String(row.title),
@@ -207,22 +205,20 @@ export function mapD1SessionRow(row: Record<string, unknown>): TutorSessionRecor
 }
 
 export function mapD1EventRow(row: Record<string, unknown>): SessionEventRecord {
-  let value: unknown = null;
-  if (row.value_json) {
-    try {
-      value = JSON.parse(String(row.value_json));
-    } catch {
-      value = null;
-    }
-  }
-
   return {
     createdAt: String(row.created_at),
     id: Number(row.id),
     message: String(row.message),
     sessionId: String(row.session_id),
-    value
+    value: parseJsonOrNull(rowStringOrNull(row.value_json))
   };
 }
 
-export { defaultTitle, nowIso, parseImageMeta, serializeImageMeta };
+export {
+  createSessionEventRecord,
+  createTutorSessionRecord,
+  nowIso,
+  parseImageMeta,
+  rowStringOrNull,
+  serializeImageMeta
+};

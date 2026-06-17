@@ -19,7 +19,7 @@ export type TutorSessionState = {
 export type LoadedSessionContext = {
   imageMeta: SessionImageMeta | null;
   imageName: string | null;
-  imagePrompt: string;
+  imagePrompt: string | null;
 };
 
 export type SessionListErrorKind = "auth" | "network" | "unknown";
@@ -46,4 +46,4 @@ export function hasPriorActivity(session: TutorSessionSummary | undefined, event
 
 export const activeSessionStorageKey = "ai-tutor.active-session-id";
 
-export const defaultImagePrompt = "Help me understand this problem step by step.";
+export { defaultImagePrompt } from "../voice-types.js";
