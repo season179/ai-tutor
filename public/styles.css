@@ -17,6 +17,8 @@
   --primary-ink: oklch(0.86 0.03 150);
   --quiet-button: oklch(0.93 0.013 148);
   --quiet-button-hover: oklch(0.89 0.017 148);
+  --disabled-bg: oklch(0.91 0.008 150);
+  --disabled-ink: oklch(0.56 0.016 156);
   --focus: oklch(0.82 0.083 148);
   --danger: oklch(0.42 0.069 32);
   --danger-soft: oklch(0.78 0.031 42);
@@ -81,15 +83,10 @@ button:not(:disabled):hover {
 }
 
 button:disabled {
+  background: var(--disabled-bg);
+  box-shadow: none;
+  color: var(--disabled-ink);
   cursor: not-allowed;
-  opacity: 1;
-}
-
-button:disabled,
-.secondary-action:disabled,
-.send-action:disabled {
-  background: oklch(0.9 0.012 148);
-  color: var(--ink);
 }
 
 button:focus-visible,
@@ -258,7 +255,7 @@ p {
 .app-body {
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(240px, 0.62fr) minmax(0, 1fr);
+  grid-template-columns: clamp(232px, 22vw, 288px) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -413,7 +410,14 @@ p {
 .main-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(275px, 0.78fr) minmax(480px, 1.28fr) minmax(360px, 0.98fr);
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 28%, 430px);
+  min-height: 0;
+}
+
+.side-stack {
+  display: grid;
+  gap: 1rem;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -429,41 +433,7 @@ p {
 }
 
 .panel-heading {
-  align-items: start;
-  display: flex;
-  gap: 0.72rem;
   margin-bottom: 1rem;
-}
-
-.panel-knot {
-  background: var(--surface-rest);
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  block-size: 1.65rem;
-  flex: 0 0 auto;
-  inline-size: 1.65rem;
-  margin-top: 0.1rem;
-  position: relative;
-}
-
-.panel-knot::before,
-.panel-knot::after {
-  background: var(--primary);
-  border-radius: 999px;
-  content: "";
-  position: absolute;
-}
-
-.panel-knot::before {
-  block-size: 0.22rem;
-  inline-size: 0.88rem;
-  inset: 0.46rem auto auto 0.37rem;
-}
-
-.panel-knot::after {
-  block-size: 0.62rem;
-  inline-size: 0.22rem;
-  inset: 0.68rem auto auto 0.7rem;
 }
 
 .panel-heading h2 {
@@ -557,7 +527,7 @@ p {
   background: var(--surface-rest);
   border: 1px solid var(--line);
   border-radius: 10px;
-  margin-top: auto;
+  margin-top: 0;
   padding: 0.95rem;
 }
 
@@ -586,14 +556,7 @@ p {
   display: grid;
   flex: 1;
   gap: 1rem;
-  grid-template-columns: minmax(0, 1fr) 17rem;
-  min-height: 0;
-}
-
-.field-stack {
-  display: grid;
-  gap: 0.9rem;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(13rem, 0.85fr);
   min-height: 0;
 }
 
@@ -687,16 +650,6 @@ pre {
   overflow: auto;
   padding: 0.9rem;
   white-space: pre-wrap;
-}
-
-@media (max-width: 1180px) {
-  .workspace {
-    max-width: none;
-  }
-
-  .main-grid {
-    grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr) minmax(320px, 0.9fr);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

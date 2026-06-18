@@ -40,28 +40,26 @@ export function ProblemContextPanel({
       title="Problem context"
     >
       <form className="image-form" onSubmit={handleSubmit}>
-        <div className="image-grid">
-          <div className="field-stack">
-            <label className="field">
-              <span>Problem image</span>
-              <input
-                accept="image/*"
-                disabled={isPreparingImage}
-                type="file"
-                onChange={(event) => onFileChange(event.target.files?.item(0) ?? undefined)}
-              />
-            </label>
+        <label className="field file-field">
+          <span>Problem image</span>
+          <input
+            accept="image/*"
+            disabled={isPreparingImage}
+            type="file"
+            onChange={(event) => onFileChange(event.target.files?.item(0) ?? undefined)}
+          />
+        </label>
 
-            <label className="field question-field">
-              <span>Question</span>
-              <textarea
-                disabled={isPreparingImage}
-                rows={5}
-                value={imagePrompt}
-                onChange={(event) => onPromptChange(event.target.value)}
-              />
-            </label>
-          </div>
+        <div className="image-grid">
+          <label className="field question-field">
+            <span>Question</span>
+            <textarea
+              disabled={isPreparingImage}
+              rows={5}
+              value={imagePrompt}
+              onChange={(event) => onPromptChange(event.target.value)}
+            />
+          </label>
 
           <div className="image-preview-block" aria-live="polite">
             <div className="image-preview">

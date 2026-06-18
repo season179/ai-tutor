@@ -116,15 +116,6 @@ export function App() {
         />
 
         <div className="main-grid">
-          <VoiceSessionPanel
-            audioRef={audioRef}
-            hasPriorActivity={activeSessionHasPriorActivity}
-            isRunning={isRunning}
-            onStart={handleStart}
-            onStop={stopSession}
-            sessionReady={sessionReady}
-          />
-
           <ProblemContextPanel
             emptyMessage={problemImage.emptyMessage}
             imageMeta={problemImage.imageMeta}
@@ -137,7 +128,18 @@ export function App() {
             sendDisabled={problemImage.sendDisabled || !sessionReady}
           />
 
-          <EventLogPanel logText={logText} />
+          <div className="side-stack">
+            <VoiceSessionPanel
+              audioRef={audioRef}
+              hasPriorActivity={activeSessionHasPriorActivity}
+              isRunning={isRunning}
+              onStart={handleStart}
+              onStop={stopSession}
+              sessionReady={sessionReady}
+            />
+
+            <EventLogPanel logText={logText} />
+          </div>
         </div>
       </div>
     </main>
