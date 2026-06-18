@@ -167,11 +167,21 @@ p {
 
 .workspace {
   display: grid;
+  grid-template-columns: var(--sidebar-inline, clamp(232px, 22vw, 288px)) minmax(0, 1fr);
+  height: 100vh;
+  width: 100%;
+}
+
+.workspace:has(.sidebar--collapsed) {
+  --sidebar-inline: clamp(56px, 4.4vw, 72px);
+}
+
+.workspace-main {
+  display: grid;
   gap: 1rem;
   grid-template-rows: auto minmax(0, 1fr);
-  height: 100vh;
-  margin: 0 auto;
-  max-width: 1560px;
+  min-height: 0;
+  min-width: 0;
   padding: 1.25rem;
 }
 
@@ -266,27 +276,135 @@ p {
   background: var(--danger);
 }
 
-.app-body {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: clamp(232px, 22vw, 288px) minmax(0, 1fr);
+.sidebar {
+  background: var(--surface-low);
+  border-inline-end: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 1rem 0.85rem;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar--collapsed {
+  align-items: center;
+  padding: 1rem 0.55rem;
+}
+
+.sidebar--collapsed .sidebar-actions,
+.sidebar--collapsed .session-list {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  inline-size: auto;
+}
+
+.sidebar-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
   min-height: 0;
 }
 
-.session-rail {
-  min-height: 0;
-}
-
-.session-list-panel {
-  min-height: 0;
-}
-
-.session-rail-actions {
-  margin-bottom: 0.85rem;
-}
-
-.session-new-action {
+.sidebar--collapsed .sidebar-header {
+  align-items: center;
+  justify-content: center;
   inline-size: 100%;
+}
+
+.sidebar-heading {
+  min-width: 0;
+}
+
+.sidebar-heading h2 {
+  font-size: 1.08rem;
+  font-weight: 790;
+  line-height: 1.15;
+  margin-bottom: 0.2rem;
+}
+
+.sidebar-heading p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.42;
+  margin-bottom: 0;
+}
+
+.sidebar-toggle {
+  flex: 0 0 auto;
+}
+
+.sidebar-chevron {
+  block-size: 1.1rem;
+  inline-size: 1.1rem;
+  transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sidebar-chevron--collapsed {
+  transform: rotate(180deg);
+}
+
+.sidebar-actions {
+  margin: 0;
+}
+
+.sidebar-new-action {
+  inline-size: 100%;
+}
+
+.sidebar--collapsed .sidebar-new-action {
+  block-size: var(--sidebar-tile, 2.6rem);
+  inline-size: var(--sidebar-tile, 2.6rem);
+  min-height: 0;
+  padding: 0;
+}
+
+.sidebar-new-icon {
+  block-size: 1.25rem;
+  inline-size: 1.25rem;
+}
+
+.sidebar-alert {
+  align-items: center;
+  background: var(--danger-soft);
+  border: 1px solid oklch(0.36 0.065 32 / 0.45);
+  border-radius: 10px;
+  color: var(--ink);
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+}
+
+.sidebar-alert p {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin: 0;
+  min-width: 0;
+}
+
+.sidebar-empty {
+  background: var(--surface-rest);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem;
+}
+
+.sidebar-empty p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.sidebar-empty--collapsed {
+  display: none;
 }
 
 .session-list {
@@ -334,6 +452,22 @@ p {
   box-shadow: inset 0 0 0 1px oklch(0.47 0.077 145 / 0.18);
 }
 
+.session-row--collapsed {
+  align-items: center;
+  block-size: var(--sidebar-tile, 2.6rem);
+  display: flex;
+  inline-size: var(--sidebar-tile, 2.6rem);
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+}
+
+.session-row-text {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
 .session-row-title {
   color: var(--ink);
   font-size: 0.95rem;
@@ -358,8 +492,17 @@ p {
   inline-size: 0.48rem;
 }
 
+.session-row--collapsed .session-status-dot {
+  block-size: 0.62rem;
+  inline-size: 0.62rem;
+}
+
 .session-status-dot--connected {
   background: oklch(0.47 0.077 145);
+}
+
+.session-status-dot--ready {
+  background: var(--success);
 }
 
 .session-status-dot--working {
@@ -395,30 +538,6 @@ p {
   50% {
     opacity: 1;
   }
-}
-
-.session-rail-empty,
-.session-rail-alert {
-  background: var(--surface-rest);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 0.85rem;
-  padding: 0.9rem;
-}
-
-.session-rail-empty p,
-.session-rail-alert p {
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
-  margin: 0;
-}
-
-.session-rail-alert {
-  background: var(--danger-soft);
-  border-color: oklch(0.36 0.065 32 / 0.45);
 }
 
 .main-grid {

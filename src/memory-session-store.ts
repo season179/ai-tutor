@@ -23,12 +23,12 @@ function nowIso(): string {
 
 function defaultTitle(createdAt: string): string {
   const date = new Date(createdAt);
-  return `Session ${date.toLocaleString(undefined, {
+  return date.toLocaleString(undefined, {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     month: "short"
-  })}`;
+  });
 }
 
 function rowStringOrNull(value: unknown): string | null {

@@ -3,11 +3,12 @@ import { useRef } from "react";
 import { BrandLockup } from "./components/BrandLockup.js";
 import { EventLogPanel } from "./components/EventLogPanel.js";
 import { ProblemContextPanel } from "./components/ProblemContextPanel.js";
-import { SessionListPanel } from "./components/SessionListPanel.js";
+import { Sidebar } from "./components/Sidebar.js";
 import { StatusBadge } from "./components/StatusBadge.js";
 import { VoiceSessionPanel } from "./components/VoiceSessionPanel.js";
 import { useEventLog } from "./hooks/use-event-log.js";
 import { useProblemImage } from "./hooks/use-problem-image.js";
+import { useSidebarCollapsed } from "./hooks/use-sidebar-collapsed.js";
 import { useTutorSessions } from "./hooks/use-tutor-sessions.js";
 import { useVoiceSession } from "./hooks/use-voice-session.js";
 import { errorMessage } from "./lib/error-message.js";
@@ -25,6 +26,8 @@ export function App() {
   const stopVoiceSessionRef = useRef<() => void>(() => undefined);
 
   const { clearEventLog, loadEventLog, logEvent, logText } = useEventLog(activeSessionIdRef, onEventLoggedRef);
+
+  const { collapsed: sidebarCollapsed, toggleCollapsed: toggleSidebarCollapsed } = useSidebarCollapsed();
 
   const tutorSessions = useTutorSessions({
     clearEventLog,
@@ -96,28 +99,30 @@ export function App() {
 
   return (
     <main className="workspace">
-      <header className="topbar">
-        <BrandLockup />
-        <StatusBadge message={status.message} tone={status.tone} />
-      </header>
+      <Sidebar
+        activeSessionId={tutorSessions.activeSessionId}
+        collapsed={sidebarCollapsed}
+        error={tutorSessions.listError}
+        isDisabled={tutorSessions.isSwitching || isRunning}
+        isLoading={tutorSessions.isLoading}
+        onCreate={() => {
+          void tutorSessions.createNewSession();
+        }}
+        onRetry={() => {
+          void tutorSessions.refreshSessions();
+        }}
+        onSelect={(sessionId) => {
+          void tutorSessions.selectSession(sessionId);
+        }}
+        onToggleCollapsed={toggleSidebarCollapsed}
+        sessions={tutorSessions.sessions}
+      />
 
-      <div className="app-body">
-        <SessionListPanel
-          activeSessionId={tutorSessions.activeSessionId}
-          error={tutorSessions.listError}
-          isDisabled={tutorSessions.isSwitching || isRunning}
-          isLoading={tutorSessions.isLoading}
-          onCreate={() => {
-            void tutorSessions.createNewSession();
-          }}
-          onRetry={() => {
-            void tutorSessions.refreshSessions();
-          }}
-          onSelect={(sessionId) => {
-            void tutorSessions.selectSession(sessionId);
-          }}
-          sessions={tutorSessions.sessions}
-        />
+      <div className="workspace-main">
+        <header className="topbar">
+          <BrandLockup />
+          <StatusBadge message={status.message} tone={status.tone} />
+        </header>
 
         <div className="main-grid">
           <ProblemContextPanel
