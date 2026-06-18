@@ -7,8 +7,9 @@ Small TypeScript AI tutor app for turn-controlled voice tutoring. A student shar
 - Node.js 24
 - pnpm 11
 - An OpenAI API key
+- Google OAuth credentials (for sign-in)
 
-This repo pins `pnpm@11.6.0` in `package.json` and includes `.node-version` / `.nvmrc` with Node 24. It uses Portless so you do not need to pick or remember a port.
+This repo pins `pnpm@11.6.0` in `package.json` and includes `.node-version` / `.nvmrc` with Node 24.
 
 ## Setup
 
@@ -16,12 +17,31 @@ This repo pins `pnpm@11.6.0` in `package.json` and includes `.node-version` / `.
 corepack enable
 corepack prepare pnpm@11.6.0 --activate
 pnpm install
-cp .env.example .env
+cp .dev.vars.example .dev.vars
 ```
 
-Set `OPENAI_API_KEY` in `.env`.
+Set `OPENAI_API_KEY` and the better-auth / Google OAuth values in `.dev.vars` (see [Authentication](#authentication)).
 
-`VOICE_BACKEND` defaults to `openai-voice-pipeline`, which uses speech-to-text, a structured lesson-controller LLM turn, and text-to-speech. `openai-realtime` remains available as a fallback by setting `VOICE_BACKEND=openai-realtime`. The `livekit-agents` backend is typed in the codebase for the future, but it intentionally returns a clear not-implemented error until the LiveKit room token service and agent worker are added.
+## Authentication
+
+Sign-in uses [better-auth](https://www.better-auth.com) with Google OAuth. Sessions are cookie-based; the cookie attaches automatically to same-origin requests.
+
+Create a Google OAuth client at <https://console.cloud.google.com/apis/credentials> and set these in `.dev.vars` (local) and as Worker secrets (production):
+
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+- `BETTER_AUTH_SECRET` — generate with `openssl rand -base64 32`
+- `BETTER_AUTH_URL` — public base URL of the deployment
+
+Authorized redirect URI: `https://<your-domain>/api/auth/callback/google`
+
+For production, set the secrets with:
+
+```bash
+pnpm wrangler secret put OPENAI_API_KEY
+pnpm wrangler secret put BETTER_AUTH_SECRET
+pnpm wrangler secret put GOOGLE_CLIENT_ID
+pnpm wrangler secret put GOOGLE_CLIENT_SECRET
+```
 
 ## Run
 
@@ -29,7 +49,13 @@ Set `OPENAI_API_KEY` in `.env`.
 pnpm dev
 ```
 
-Portless prints a stable local URL, normally `https://ai-tutor.localhost`. Open that URL, choose a problem image, wait for it to be prepared, and click **Ask about image**. The tutor will speak one short next step. Use **Record answer** after each prompt, then **Stop and send** to let the tutor check that answer before moving on.
+This builds the client and runs `wrangler dev` with a local D1 database, so better-auth has a real store in dev. Apply the database schema locally with:
+
+```bash
+pnpm db:migrate
+```
+
+Open the printed URL (usually `http://localhost:8787`), sign in with Google, choose a problem image, wait for it to be prepared, and click **Ask about image**. The tutor will speak one short next step. Use **Record answer** after each prompt, then **Stop and send** to let the tutor check that answer before moving on.
 
 ## How it works
 
@@ -40,28 +66,19 @@ Portless prints a stable local URL, normally `https://ai-tutor.localhost`. Open 
 - The browser uses a provider-neutral `VoiceClientAdapter`; the pipeline adapter records one answer clip at a time and plays the returned tutor audio.
 - The `openai-realtime` fallback still wraps OpenAI Realtime client-secret creation behind the same `VoiceSessionService`.
 - Image files are decoded in the browser, resized to a 2048px maximum side, flattened onto a white background, encoded as bounded JPEG data URLs, and sent through a provider-neutral user-turn shape.
-- Portless maps the app to a named `.localhost` URL and manages local routing behind the scenes.
 
 ## Cloudflare Workers
 
-The production deployment uses a Worker-native entrypoint in `src/worker.ts` plus Workers Static Assets for `public/`. The Worker handles `POST /api/voice/session` and `POST /api/voice/turn`, reads `OPENAI_API_KEY` from Cloudflare secrets, rate-limits voice API requests, sends OpenAI a hashed per-caller safety identifier for the Realtime fallback, and serves static assets through the `ASSETS` binding.
-
-For local Worker development:
-
-```bash
-cp .dev.vars.example .dev.vars
-```
-
-Set `OPENAI_API_KEY` in `.dev.vars`, then run:
-
-```bash
-pnpm dev:worker
-```
+The production deployment uses a Worker-native entrypoint in `src/worker.ts` plus Workers Static Assets for `public/`. The Worker handles better-auth routes at `/api/auth/*`, plus `POST /api/voice/session` and `POST /api/voice/turn`, reads secrets from Cloudflare, rate-limits voice API requests, sends OpenAI a hashed per-caller safety identifier for the Realtime fallback, and serves static assets through the `ASSETS` binding. A new better-auth instance is constructed per request from the `DB` (D1) binding.
 
 For deployment:
 
 ```bash
 pnpm wrangler secret put OPENAI_API_KEY
+pnpm wrangler secret put BETTER_AUTH_SECRET
+pnpm wrangler secret put GOOGLE_CLIENT_ID
+pnpm wrangler secret put GOOGLE_CLIENT_SECRET
+pnpm db:migrate:remote
 pnpm deploy:dry-run
 pnpm deploy
 ```
@@ -71,12 +88,12 @@ pnpm deploy
 ## Scripts
 
 ```bash
-pnpm dev
-pnpm dev:worker
+pnpm dev            # build client + wrangler dev (local D1)
+pnpm db:migrate     # apply D1 migrations locally
+pnpm db:migrate:remote
 pnpm check:worker-types
 pnpm typecheck
 pnpm build
 pnpm deploy:dry-run
 pnpm deploy
-pnpm start
 ```

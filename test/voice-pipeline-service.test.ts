@@ -11,7 +11,7 @@ test("handleVoicePipelineTurnWithStore accepts empty lesson safety notes", async
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Pipeline test" });
   const context: RequestContext = {
-    identity: { sub: "test-user" },
+    identity: { userId: "test-user" },
     ownerKey
   };
   const originalFetch = globalThis.fetch;
@@ -87,7 +87,7 @@ test("handleVoicePipelineTurnWithStore reads lesson JSON from response output co
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Pipeline test" });
   const context: RequestContext = {
-    identity: { sub: "test-user" },
+    identity: { userId: "test-user" },
     ownerKey
   };
   const originalFetch = globalThis.fetch;
@@ -170,7 +170,7 @@ test("handleVoicePipelineTurnWithStore accepts recorder audio data URLs with cod
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Pipeline audio test" });
   const context: RequestContext = {
-    identity: { sub: "test-user" },
+    identity: { userId: "test-user" },
     ownerKey
   };
   const originalFetch = globalThis.fetch;

@@ -1,3 +1,4 @@
+import { createAuth, authPathPrefix } from "./auth.js";
 import { createApiHandlerEnv, handleApiRequest } from "./api-handler.js";
 import { D1SessionStore } from "./d1-session-store.js";
 import { voiceSessionPath, voiceTurnPath } from "./voice-types.js";
@@ -5,6 +6,13 @@ import { voiceSessionPath, voiceTurnPath } from "./voice-types.js";
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
+
+    // better-auth handles its own routes (sign-in, callback, sign-out, session).
+    // These must run before the ownership-gated API handler.
+    if (url.pathname.startsWith(authPathPrefix)) {
+      const auth = createAuth(env);
+      return auth.handler(request);
+    }
 
     if ((url.pathname === voiceSessionPath || url.pathname === voiceTurnPath) && request.method === "POST") {
       const rateLimitResponse = await limitVoiceSessionRequest(env, readCallerKey(request));
@@ -14,7 +22,11 @@ export default {
     }
 
     const store = new D1SessionStore(env.DB);
-    const apiResponse = await handleApiRequest(request, createApiHandlerEnv(env), { store });
+    const auth = createAuth(env);
+    const apiResponse = await handleApiRequest(request, createApiHandlerEnv(env), {
+      auth,
+      store
+    });
 
     if (apiResponse) {
       return apiResponse;

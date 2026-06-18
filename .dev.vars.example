@@ -1,8 +1,22 @@
+# Used by `wrangler dev` (local development). Copy to `.dev.vars`.
 OPENAI_API_KEY=your-openai-api-key
+
+# better-auth (generate a secret: `openssl rand -base64 32`)
+BETTER_AUTH_SECRET=your-better-auth-secret
+# Public base URL of the app. In local dev this is usually http://localhost:8787
+BETTER_AUTH_URL=http://localhost:8787
+
+# Google OAuth. Create a project at https://console.cloud.google.com/apis/credentials
+# Authorized redirect URI for local dev: http://localhost:8787/api/auth/callback/google
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# Voice / model defaults (optional — fall back to wrangler.jsonc vars)
 VOICE_BACKEND=openai-voice-pipeline
 OPENAI_TUTOR_MODEL=gpt-5.5
 OPENAI_TRANSCRIBE_MODEL=gpt-4o-transcribe
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
 OPENAI_TTS_VOICE=marin
-TEAM_DOMAIN=https://your-team.cloudflareaccess.com
-POLICY_AUD=your-access-application-aud-tag
+OPENAI_REALTIME_MODEL=gpt-realtime-2
+OPENAI_REALTIME_VOICE=marin
+OPENAI_SAFETY_IDENTIFIER=local-ai-tutor-user

@@ -847,3 +847,109 @@ pre {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Sign-in screen */
+
+.sign-in-screen {
+  align-items: center;
+  background: var(--surface-low);
+  display: flex;
+  inline-size: 100%;
+  justify-content: center;
+  block-size: 100vh;
+}
+
+.sign-in-card {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 2.8rem 2.4rem;
+  text-align: center;
+}
+
+.sign-in-card h1 {
+  font-size: 1.7rem;
+  font-weight: 820;
+  margin-top: 0.4rem;
+}
+
+.sign-in-card p {
+  color: var(--muted);
+  margin-bottom: 1.1rem;
+}
+
+.brand-mark-lg {
+  block-size: 3.4rem;
+  inline-size: 3.4rem;
+}
+
+.sign-in-card .primary-action {
+  inline-size: 100%;
+}
+
+/* Text button (inline link-styled button) */
+
+.text-button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.text-button:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* Sidebar account footer */
+
+.sidebar-footer {
+  border-block-start: 1px solid var(--line);
+  margin-block-start: auto;
+  padding: 0.6rem 0.7rem;
+}
+
+.sidebar--collapsed .sidebar-footer {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  padding: 0.4rem;
+}
+
+.sidebar-account {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.sidebar-account-email {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  max-inline-size: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-signout,
+.sidebar-signout-link {
+  color: var(--muted);
+}
+
+.sidebar-signout:not(:disabled):hover,
+.sidebar-signout-link:hover {
+  color: var(--danger);
+}
+
+.workspace[aria-busy="true"] {
+  background: var(--surface-low);
+  block-size: 100vh;
+}

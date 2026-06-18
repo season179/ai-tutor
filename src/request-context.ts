@@ -1,13 +1,17 @@
-export type AccessIdentity = {
+export type AuthIdentity = {
   email?: string;
-  sub: string;
+  userId: string;
 };
 
 export type RequestContext = {
-  identity: AccessIdentity;
+  identity: AuthIdentity;
   ownerKey: string;
 };
 
-export function buildOwnerKey(sub: string): string {
-  return `access:${sub}`;
+/**
+ * Sessions are scoped per authenticated user. better-auth user ids are unique
+ * and opaque, so they serve directly as the ownership key — no prefix needed.
+ */
+export function buildOwnerKey(userId: string): string {
+  return userId;
 }

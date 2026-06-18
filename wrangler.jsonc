@@ -7,7 +7,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/voice/session", "/api/voice/turn", "/api/sessions", "/api/sessions/*"]
+    "run_worker_first": ["/api/auth/*", "/api/voice/session", "/api/voice/turn", "/api/sessions", "/api/sessions/*"]
   },
   "vars": {
     "VOICE_BACKEND": "openai-voice-pipeline",
@@ -18,8 +18,7 @@
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
     "OPENAI_REALTIME_VOICE": "marin",
     "OPENAI_SAFETY_IDENTIFIER": "cloudflare-ai-tutor-user",
-    "TEAM_DOMAIN": "https://your-team.cloudflareaccess.com",
-    "POLICY_AUD": "your-access-application-aud-tag"
+    "BETTER_AUTH_URL": "https://ai-tutor.local"
   },
   "d1_databases": [
     {
@@ -30,7 +29,7 @@
     }
   ],
   "secrets": {
-    "required": ["OPENAI_API_KEY"]
+    "required": ["OPENAI_API_KEY", "BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
   },
   "ratelimits": [
     {

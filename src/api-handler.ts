@@ -1,4 +1,4 @@
-import { authenticateRequest, type AccessAuthEnv } from "./access-auth.js";
+import { type Auth } from "./auth.js";
 import { HttpError, type JsonValue } from "./http-error.js";
 import type { SessionStore } from "./session-store.js";
 import { handleSessionsRequest, readJsonBody } from "./session-handler.js";
@@ -7,11 +7,11 @@ import { createVoiceSessionWithStore } from "./voice-session-handler.js";
 import { handleVoicePipelineTurnWithStore } from "./voice-pipeline-service.js";
 import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { maxVoiceTurnBodyBytes, voiceSessionPath, voiceTurnPath } from "./voice-types.js";
+import { buildOwnerKey, type AuthIdentity, type RequestContext } from "./request-context.js";
 
-export type ApiHandlerEnv = AccessAuthEnv & VoiceSessionServiceEnv;
+export type ApiHandlerEnv = VoiceSessionServiceEnv;
 
 export type ApiHandlerEnvSource = {
-  ACCESS_DEV_IDENTITY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_REALTIME_MODEL?: string;
   OPENAI_REALTIME_VOICE?: string;
@@ -20,13 +20,11 @@ export type ApiHandlerEnvSource = {
   OPENAI_TTS_MODEL?: string;
   OPENAI_TTS_VOICE?: string;
   OPENAI_TUTOR_MODEL?: string;
-  POLICY_AUD?: string;
-  TEAM_DOMAIN?: string;
   VOICE_BACKEND?: string;
 };
 
 export type ApiHandlerOptions = {
-  allowDevBypass?: boolean;
+  auth: Auth;
   store: SessionStore;
 };
 
@@ -40,10 +38,7 @@ export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv 
     OPENAI_TTS_MODEL: source.OPENAI_TTS_MODEL,
     OPENAI_TTS_VOICE: source.OPENAI_TTS_VOICE,
     OPENAI_TUTOR_MODEL: source.OPENAI_TUTOR_MODEL,
-    VOICE_BACKEND: source.VOICE_BACKEND,
-    ...(source.ACCESS_DEV_IDENTITY ? { ACCESS_DEV_IDENTITY: source.ACCESS_DEV_IDENTITY } : {}),
-    ...(source.POLICY_AUD ? { POLICY_AUD: source.POLICY_AUD } : {}),
-    ...(source.TEAM_DOMAIN ? { TEAM_DOMAIN: source.TEAM_DOMAIN } : {})
+    VOICE_BACKEND: source.VOICE_BACKEND
   };
 }
 
@@ -67,6 +62,33 @@ function isApiPath(pathname: string): boolean {
   );
 }
 
+function unauthorized(): HttpError {
+  return new HttpError(401, "Unauthorized");
+}
+
+/**
+ * Resolves the authenticated user from the better-auth session cookie.
+ * Returns a RequestContext whose ownerKey is the better-auth user id, or
+ * throws 401 if there is no valid session.
+ */
+async function authenticate(request: Request, auth: Auth): Promise<RequestContext> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session) {
+    throw unauthorized();
+  }
+
+  const userId = session.user.id;
+  const identity: AuthIdentity = {
+    userId,
+    ...(session.user.email ? { email: session.user.email } : {})
+  };
+
+  return {
+    identity,
+    ownerKey: buildOwnerKey(userId)
+  };
+}
+
 export async function handleApiRequest(
   request: Request,
   env: ApiHandlerEnv,
@@ -78,11 +100,7 @@ export async function handleApiRequest(
   }
 
   try {
-    const context = await authenticateRequest(
-      request,
-      env,
-      options.allowDevBypass ? { allowDevBypass: true } : undefined
-    );
+    const context = await authenticate(request, options.auth);
 
     if (url.pathname === voiceSessionPath) {
       if (request.method !== "POST") {

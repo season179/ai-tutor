@@ -14,8 +14,10 @@ type SidebarProps = {
   onCreate: () => void;
   onRetry: () => void;
   onSelect: (sessionId: string) => void;
+  onSignOut: () => void;
   onToggleCollapsed: () => void;
   sessions: TutorSessionSummary[];
+  userEmail?: string;
 };
 
 function statusTone(status: TutorSessionStatus): string {
@@ -47,8 +49,10 @@ export function Sidebar({
   onCreate,
   onRetry,
   onSelect,
+  onSignOut,
   onToggleCollapsed,
-  sessions
+  sessions,
+  userEmail
 }: SidebarProps) {
   const showEmpty = !isLoading && !error && sessions.length === 0;
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
@@ -159,6 +163,27 @@ export function Sidebar({
           })}
         </ul>
       ) : null}
+
+      <div className="sidebar-footer">
+        {collapsed ? (
+          <button
+            aria-label="Sign out"
+            className="icon-button sidebar-signout"
+            onClick={onSignOut}
+            title="Sign out"
+            type="button"
+          >
+            <SignOutIcon />
+          </button>
+        ) : (
+          <div className="sidebar-account">
+            {userEmail ? <span className="sidebar-account-email" title={userEmail}>{userEmail}</span> : null}
+            <button className="text-button sidebar-signout-link" onClick={onSignOut} type="button">
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -210,6 +235,24 @@ function RetryIcon() {
     >
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <path d="M3 3v5h5" />
+    </svg>
+  );
+}
+
+function SignOutIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
     </svg>
   );
 }

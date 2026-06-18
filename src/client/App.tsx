@@ -3,9 +3,11 @@ import { useRef } from "react";
 import { BrandLockup } from "./components/BrandLockup.js";
 import { EventLogPanel } from "./components/EventLogPanel.js";
 import { ProblemContextPanel } from "./components/ProblemContextPanel.js";
+import { SignInScreen } from "./components/SignInScreen.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBadge } from "./components/StatusBadge.js";
 import { VoiceSessionPanel } from "./components/VoiceSessionPanel.js";
+import { useAuth } from "./hooks/use-auth.js";
 import { useEventLog } from "./hooks/use-event-log.js";
 import { useProblemImage } from "./hooks/use-problem-image.js";
 import { useSidebarCollapsed } from "./hooks/use-sidebar-collapsed.js";
@@ -16,6 +18,8 @@ import type { LoadedSessionContext, StatusTone } from "./types.js";
 import { hasPriorActivity } from "./types.js";
 
 export function App() {
+  const { isAuthLoading, signInWithGoogle, signOut, user } = useAuth();
+
   const audioRef = useRef<HTMLAudioElement>(null);
   const activeSessionIdRef = useRef<string | undefined>(undefined);
   const isVoiceRunningRef = useRef(false);
@@ -97,6 +101,16 @@ export function App() {
     !tutorSessions.isSwitching &&
     !tutorSessions.isHydrating;
 
+  if (isAuthLoading) {
+    return <main className="workspace" aria-busy="true" />;
+  }
+
+  if (!user) {
+    return <SignInScreen onSignIn={signInWithGoogle} />;
+  }
+
+  const userEmail = user.email;
+
   return (
     <main className="workspace">
       <Sidebar
@@ -114,8 +128,10 @@ export function App() {
         onSelect={(sessionId) => {
           void tutorSessions.selectSession(sessionId);
         }}
+        onSignOut={signOut}
         onToggleCollapsed={toggleSidebarCollapsed}
         sessions={tutorSessions.sessions}
+        {...(userEmail ? { userEmail } : {})}
       />
 
       <div className="workspace-main">
