@@ -41,10 +41,14 @@ export function App() {
 
   const {
     ensureSessionReadyForImage,
+    canRecordAudioTurn,
+    finishAudioTurn,
     getPayloadLimitBytes,
     getSession,
+    isRecording,
     isRunning,
     setStatus,
+    startAudioTurn,
     startSession,
     status,
     stopSession
@@ -131,9 +135,15 @@ export function App() {
           <div className="side-stack">
             <VoiceSessionPanel
               audioRef={audioRef}
+              canRecordAudioTurn={canRecordAudioTurn}
               hasPriorActivity={activeSessionHasPriorActivity}
+              isRecording={isRecording}
               isRunning={isRunning}
+              onFinishAudioTurn={() => {
+                void finishAudioTurn();
+              }}
               onStart={handleStart}
+              onStartAudioTurn={startAudioTurn}
               onStop={stopSession}
               sessionReady={sessionReady}
             />

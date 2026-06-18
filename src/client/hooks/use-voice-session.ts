@@ -26,6 +26,16 @@ type UseVoiceSessionOptions = {
 };
 
 function describeVoiceSession(descriptor: VoiceSessionDescriptor): Record<string, string> {
+  if (descriptor.provider === "openai-voice-pipeline") {
+    return {
+      model: descriptor.model,
+      provider: descriptor.provider,
+      transcribeModel: descriptor.transcribeModel,
+      ttsModel: descriptor.ttsModel,
+      voice: descriptor.voice
+    };
+  }
+
   if (descriptor.provider === "openai-realtime") {
     return {
       model: descriptor.model,
@@ -42,11 +52,15 @@ function describeVoiceSession(descriptor: VoiceSessionDescriptor): Record<string
 }
 
 export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessionOptions): {
+  canRecordAudioTurn: boolean;
+  finishAudioTurn: () => Promise<void>;
   isRunning: boolean;
+  isRecording: boolean;
   getPayloadLimitBytes: () => number | undefined;
   getSession: () => TutorSessionState | undefined;
   ensureSessionReadyForImage: () => Promise<TutorSessionState>;
   setStatus: (message: string, tone?: StatusTone) => void;
+  startAudioTurn: () => void;
   startSession: (options?: StartSessionOptions) => Promise<TutorSessionState>;
   status: AppStatus;
   stopSession: () => void;
@@ -56,6 +70,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     tone: "ready"
   });
   const [isRunning, setIsRunning] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
   const sessionRef = useRef<TutorSessionState | undefined>(undefined);
   const startSessionPromiseRef = useRef<Promise<TutorSessionState> | undefined>(undefined);
@@ -74,7 +89,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   }, [setStatus]);
 
   const cleanupSessionResources = useCallback((activeSession: TutorSessionState) => {
-    activeSession.mediaStream.getTracks().forEach((track) => track.stop());
+    activeSession.mediaStream?.getTracks().forEach((track) => track.stop());
 
     if (audioRef.current) {
       audioRef.current.srcObject = null;
@@ -102,6 +117,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         sessionRef.current = undefined;
         cleanupSession(activeSession);
         afterCleanup?.();
+        setIsRecording(false);
       } finally {
         isStoppingSessionRef.current = false;
       }
@@ -114,6 +130,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
       cleanupSessionResources(activeSession);
       sessionRef.current = undefined;
       setIsRunning(false);
+      setIsRecording(false);
     },
     [cleanupSessionResources]
   );
@@ -168,6 +185,20 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
           }
           case "connected":
             return;
+          case "recording_started":
+            setIsRecording(true);
+            setStatus("Listening to your answer...", "working");
+            return;
+          case "recording_finished":
+            setIsRecording(false);
+            setStatus("Checking your answer...", "working");
+            return;
+          case "student_transcript":
+            logEvent("Student transcript", event.text);
+            return;
+          case "tutor_text":
+            logEvent("Tutor said", event.text);
+            return;
         }
       }),
     [clearDisconnectedSession, logEvent, markCurrentSessionEnded, setStatus]
@@ -195,8 +226,12 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
 
         const descriptor = await requestVoiceSessionDescriptor(activeSessionId);
         assertNotCancelled();
-        setStatus("Requesting microphone access...", "working");
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        let mediaStream: MediaStream | undefined;
+        if (descriptor.provider === "openai-realtime") {
+          setStatus("Requesting microphone access...", "working");
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
         assertNotCancelled();
 
         if (!audioRef.current) {
@@ -208,14 +243,15 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
           mediaStream
         });
 
-        pendingSession = {
+        const nextSession: TutorSessionState = {
           adapter,
           descriptor,
-          mediaStream,
+          ...(mediaStream ? { mediaStream } : {}),
           unsubscribe: () => undefined
         };
+        pendingSession = nextSession;
         sessionRef.current = pendingSession;
-        pendingSession.unsubscribe = wireSessionEvents(pendingSession);
+        nextSession.unsubscribe = wireSessionEvents(nextSession);
 
         setStatus(connectingStatusMessage, "working");
         await adapter.connect(descriptor);
@@ -223,11 +259,11 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         setStatus(connectedStatusMessage, "connected");
         logEvent("Voice session connected", describeVoiceSession(descriptor));
 
-        if (greetOnOpen) {
+        if (greetOnOpen && descriptor.provider === "openai-realtime") {
           adapter.requestReply(descriptor.tutorPolicy.greetingInstructions);
         }
 
-        return pendingSession;
+        return nextSession;
       } catch (error) {
         cleanupSession(pendingSession);
         sessionRef.current = undefined;
@@ -291,6 +327,47 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     });
   }, [cleanupStoppingSession, logEvent, markCurrentSessionEnded, setReadyStatus]);
 
+  const startAudioTurn = useCallback(() => {
+    const activeSession = sessionRef.current;
+
+    if (!activeSession) {
+      setStatus("Start tutoring before recording an answer.", "error");
+      return;
+    }
+
+    if (activeSession.adapter.isCapturingAudio) {
+      return;
+    }
+
+    try {
+      setStatus("Requesting microphone access...", "working");
+      void activeSession.adapter.startAudioTurn().catch((error: unknown) => {
+        setStatus(errorMessage(error, "Could not start recording."), "error");
+        logEvent("Recording start failed", errorLogValue(error));
+      });
+    } catch (error) {
+      setStatus(errorMessage(error, "Could not start recording."), "error");
+      logEvent("Recording start failed", errorLogValue(error));
+    }
+  }, [logEvent, setStatus]);
+
+  const finishAudioTurn = useCallback(async () => {
+    const activeSession = sessionRef.current;
+
+    if (!activeSession) {
+      setStatus("Start tutoring before sending an answer.", "error");
+      return;
+    }
+
+    try {
+      await activeSession.adapter.finishAudioTurn();
+    } catch (error) {
+      setIsRecording(false);
+      setStatus(errorMessage(error, "Could not send your answer."), "error");
+      logEvent("Recording send failed", errorLogValue(error));
+    }
+  }, [logEvent, setStatus]);
+
   const ensureSessionReadyForImage = useCallback(async (): Promise<TutorSessionState> => {
     const activeSession = sessionRef.current;
 
@@ -331,11 +408,15 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   }, [cleanupStoppingSession]);
 
   return {
+    canRecordAudioTurn: Boolean(sessionRef.current?.adapter.supportsAudioTurns),
     ensureSessionReadyForImage,
+    finishAudioTurn,
     getPayloadLimitBytes,
     getSession,
+    isRecording,
     isRunning,
     setStatus,
+    startAudioTurn,
     startSession,
     status,
     stopSession

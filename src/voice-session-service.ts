@@ -7,13 +7,22 @@ import {
 } from "./realtime-token.js";
 import { isJsonObject } from "./schema-parser.js";
 import { tutorPolicy } from "./tutor-policy.js";
-import { serializeOpenAIRealtimeSessionDescriptor } from "./voice-session-schema.js";
+import {
+  serializeOpenAIRealtimeSessionDescriptor,
+  serializeOpenAIVoicePipelineSessionDescriptor
+} from "./voice-session-schema.js";
+import {
+  createVoicePipelineOptions,
+  type VoicePipelineServiceEnv
+} from "./voice-pipeline-service.js";
 import type {
   CreateVoiceSessionRequest,
+  OpenAIVoicePipelineSessionDescriptor,
   OpenAIRealtimeSessionDescriptor,
   VoiceBackend,
   VoiceSessionDescriptor
 } from "./voice-types.js";
+import { maxVoiceTurnBodyBytes } from "./voice-types.js";
 
 export type VoiceSessionContext = {
   callerKey?: string;
@@ -24,8 +33,7 @@ export type VoiceSessionService = {
   createSession(request: CreateVoiceSessionRequest, context?: VoiceSessionContext): Promise<VoiceSessionDescriptor>;
 };
 
-export type VoiceSessionServiceEnv = {
-  OPENAI_API_KEY: string | undefined;
+export type VoiceSessionServiceEnv = VoicePipelineServiceEnv & {
   OPENAI_REALTIME_MODEL: string | undefined;
   OPENAI_REALTIME_VOICE: string | undefined;
   OPENAI_SAFETY_IDENTIFIER: string | undefined;
@@ -39,10 +47,14 @@ type OpenAIRealtimeSessionServiceOptions = {
   voice: string;
 };
 
-export const defaultVoiceBackend: VoiceBackend = "openai-realtime";
+export const defaultVoiceBackend: VoiceBackend = "openai-voice-pipeline";
 
 export function createVoiceSessionService(env: VoiceSessionServiceEnv): VoiceSessionService {
   const backend = readVoiceBackend(env.VOICE_BACKEND);
+
+  if (backend === "openai-voice-pipeline") {
+    return new OpenAIVoicePipelineSessionService(createVoicePipelineOptions(env));
+  }
 
   if (backend === "openai-realtime") {
     return new OpenAIRealtimeSessionService({
@@ -61,11 +73,41 @@ function readVoiceBackend(value: string | undefined): VoiceBackend {
     return defaultVoiceBackend;
   }
 
-  if (value === "openai-realtime" || value === "livekit-agents") {
+  if (value === "openai-voice-pipeline" || value === "openai-realtime" || value === "livekit-agents") {
     return value;
   }
 
   throw new HttpError(500, `Unsupported VOICE_BACKEND: ${value}`);
+}
+
+class OpenAIVoicePipelineSessionService implements VoiceSessionService {
+  constructor(private readonly options: ReturnType<typeof createVoicePipelineOptions>) {}
+
+  createSession(
+    request: CreateVoiceSessionRequest,
+    context: VoiceSessionContext = {}
+  ): Promise<OpenAIVoicePipelineSessionDescriptor> {
+    assertTutorIntent(request);
+
+    return Promise.resolve(
+      serializeOpenAIVoicePipelineSessionDescriptor({
+        capabilities: {
+          audioInput: true,
+          audioOutput: true,
+          imageInput: true,
+          manualReply: true,
+          payloadLimitBytes: maxVoiceTurnBodyBytes
+        },
+        model: this.options.tutorModel,
+        provider: "openai-voice-pipeline",
+        sessionId: context.sessionId ?? crypto.randomUUID(),
+        transcribeModel: this.options.transcribeModel,
+        ttsModel: this.options.ttsModel,
+        tutorPolicy,
+        voice: this.options.voice
+      })
+    );
+  }
 }
 
 class OpenAIRealtimeSessionService implements VoiceSessionService {

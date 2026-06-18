@@ -2,9 +2,15 @@ import { z } from "zod";
 
 import type {
   LiveKitAgentsSessionDescriptor,
+  LessonControllerTurn,
+  OpenAIVoicePipelineSessionDescriptor,
   OpenAIRealtimeSessionDescriptor,
+  PublicLessonTurn,
   TutorPolicy,
   VoiceCapabilities,
+  VoicePipelineTurnRequest,
+  VoicePipelineTurnResponse,
+  VoicePreparedImage,
   VoiceSessionDescriptor
 } from "./voice-types.js";
 import { parseObjectWithSchema } from "./schema-parser.js";
@@ -38,6 +44,14 @@ const openAIRealtimeSessionDescriptorSchema = baseVoiceSessionDescriptorSchema.e
   voice: z.string().min(1)
 }) satisfies z.ZodType<OpenAIRealtimeSessionDescriptor>;
 
+const openAIVoicePipelineSessionDescriptorSchema = baseVoiceSessionDescriptorSchema.extend({
+  model: z.string().min(1),
+  provider: z.literal("openai-voice-pipeline"),
+  transcribeModel: z.string().min(1),
+  ttsModel: z.string().min(1),
+  voice: z.string().min(1)
+}) satisfies z.ZodType<OpenAIVoicePipelineSessionDescriptor>;
+
 const liveKitAgentsSessionDescriptorSchema = baseVoiceSessionDescriptorSchema.extend({
   agentName: z.string().min(1),
   livekitUrl: z.string().min(1),
@@ -48,9 +62,63 @@ const liveKitAgentsSessionDescriptorSchema = baseVoiceSessionDescriptorSchema.ex
 }) satisfies z.ZodType<LiveKitAgentsSessionDescriptor>;
 
 export const voiceSessionDescriptorSchema = z.discriminatedUnion("provider", [
+  openAIVoicePipelineSessionDescriptorSchema,
   openAIRealtimeSessionDescriptorSchema,
   liveKitAgentsSessionDescriptorSchema
 ]);
+
+const voicePreparedImageSchema = z.object({
+  dataUrl: z.string().min(1),
+  height: z.number().int().positive(),
+  mimeType: z.string().min(1),
+  name: z.string().min(1),
+  size: z.number().int().positive(),
+  width: z.number().int().positive()
+}) satisfies z.ZodType<VoicePreparedImage>;
+
+const voicePipelineAudioInputSchema = z.object({
+  dataUrl: z.string().min(1),
+  mimeType: z.string().min(1),
+  name: z.string().min(1).optional(),
+  size: z.number().int().positive()
+});
+
+export const voicePipelineTurnRequestSchema = z
+  .object({
+    audio: voicePipelineAudioInputSchema.optional(),
+    image: voicePreparedImageSchema.nullable().optional(),
+    sessionId: z.string().trim().min(1),
+    text: z.string().max(4_000).optional()
+  })
+  .refine(
+    (value) => Boolean(value.audio || value.image || value.text?.trim()),
+    { message: "Voice turn request must include audio, image, or text." }
+  ) satisfies z.ZodType<VoicePipelineTurnRequest>;
+
+const lessonControllerTurnSchema = z.object({
+  hiddenState: z.string(),
+  phase: z.enum(["orient", "ask_step", "check_answer", "hint", "advance", "wrap"]),
+  safetyNotes: z.string(),
+  spokenUtterance: z.string().min(1),
+  studentStatus: z.enum(["unknown", "correct", "partial", "stuck"]),
+  tutorAction: z.enum(["orient", "ask", "hint", "confirm", "wrap"])
+}) satisfies z.ZodType<LessonControllerTurn>;
+
+const publicLessonTurnSchema = lessonControllerTurnSchema.omit({
+  hiddenState: true,
+  safetyNotes: true
+}) satisfies z.ZodType<PublicLessonTurn>;
+
+export const voicePipelineTurnResponseSchema = z.object({
+  audio: z.object({
+    dataUrl: z.string().min(1),
+    mimeType: z.string().min(1),
+    size: z.number().int().positive()
+  }),
+  lesson: publicLessonTurnSchema,
+  transcript: z.string(),
+  tutorText: z.string().min(1)
+}) satisfies z.ZodType<VoicePipelineTurnResponse>;
 
 export function parseVoiceSessionDescriptor(value: unknown): VoiceSessionDescriptor {
   return parseObjectWithSchema(voiceSessionDescriptorSchema, value, {
@@ -67,4 +135,30 @@ export function serializeOpenAIRealtimeSessionDescriptor(
   descriptor: OpenAIRealtimeSessionDescriptor
 ): OpenAIRealtimeSessionDescriptor {
   return openAIRealtimeSessionDescriptorSchema.parse(descriptor);
+}
+
+export function serializeOpenAIVoicePipelineSessionDescriptor(
+  descriptor: OpenAIVoicePipelineSessionDescriptor
+): OpenAIVoicePipelineSessionDescriptor {
+  return openAIVoicePipelineSessionDescriptorSchema.parse(descriptor);
+}
+
+export function parseVoicePipelineTurnRequest(value: unknown): VoicePipelineTurnRequest {
+  return parseObjectWithSchema(voicePipelineTurnRequestSchema, value, {
+    invalid: "Voice turn request was invalid.",
+    notObject: "Voice turn request must be a JSON object."
+  });
+}
+
+export function parseVoicePipelineTurnResponse(value: unknown): VoicePipelineTurnResponse {
+  return parseObjectWithSchema(voicePipelineTurnResponseSchema, value, {
+    invalid: "Voice turn response was invalid.",
+    notObject: "Voice turn response must be a JSON object."
+  });
+}
+
+export function serializeVoicePipelineTurnResponse(
+  response: VoicePipelineTurnResponse
+): VoicePipelineTurnResponse {
+  return voicePipelineTurnResponseSchema.parse(response);
 }

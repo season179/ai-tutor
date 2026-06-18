@@ -4,8 +4,9 @@ import type { SessionStore } from "./session-store.js";
 import { handleSessionsRequest, readJsonBody } from "./session-handler.js";
 import { sessionsPath } from "./session-types.js";
 import { createVoiceSessionWithStore } from "./voice-session-handler.js";
+import { handleVoicePipelineTurnWithStore } from "./voice-pipeline-service.js";
 import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
-import { voiceSessionPath } from "./voice-types.js";
+import { maxVoiceTurnBodyBytes, voiceSessionPath, voiceTurnPath } from "./voice-types.js";
 
 export type ApiHandlerEnv = AccessAuthEnv & VoiceSessionServiceEnv;
 
@@ -15,6 +16,10 @@ export type ApiHandlerEnvSource = {
   OPENAI_REALTIME_MODEL?: string;
   OPENAI_REALTIME_VOICE?: string;
   OPENAI_SAFETY_IDENTIFIER?: string;
+  OPENAI_TRANSCRIBE_MODEL?: string;
+  OPENAI_TTS_MODEL?: string;
+  OPENAI_TTS_VOICE?: string;
+  OPENAI_TUTOR_MODEL?: string;
   POLICY_AUD?: string;
   TEAM_DOMAIN?: string;
   VOICE_BACKEND?: string;
@@ -31,6 +36,10 @@ export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv 
     OPENAI_REALTIME_MODEL: source.OPENAI_REALTIME_MODEL,
     OPENAI_REALTIME_VOICE: source.OPENAI_REALTIME_VOICE,
     OPENAI_SAFETY_IDENTIFIER: source.OPENAI_SAFETY_IDENTIFIER,
+    OPENAI_TRANSCRIBE_MODEL: source.OPENAI_TRANSCRIBE_MODEL,
+    OPENAI_TTS_MODEL: source.OPENAI_TTS_MODEL,
+    OPENAI_TTS_VOICE: source.OPENAI_TTS_VOICE,
+    OPENAI_TUTOR_MODEL: source.OPENAI_TUTOR_MODEL,
     VOICE_BACKEND: source.VOICE_BACKEND,
     ...(source.ACCESS_DEV_IDENTITY ? { ACCESS_DEV_IDENTITY: source.ACCESS_DEV_IDENTITY } : {}),
     ...(source.POLICY_AUD ? { POLICY_AUD: source.POLICY_AUD } : {}),
@@ -50,7 +59,12 @@ function json(payload: JsonValue, status: number, headers: Record<string, string
 }
 
 function isApiPath(pathname: string): boolean {
-  return pathname === voiceSessionPath || pathname === sessionsPath || pathname.startsWith(`${sessionsPath}/`);
+  return (
+    pathname === voiceSessionPath ||
+    pathname === voiceTurnPath ||
+    pathname === sessionsPath ||
+    pathname.startsWith(`${sessionsPath}/`)
+  );
 }
 
 export async function handleApiRequest(
@@ -83,6 +97,21 @@ export async function handleApiRequest(
       );
 
       return json(descriptor, 200);
+    }
+
+    if (url.pathname === voiceTurnPath) {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+
+      const response = await handleVoicePipelineTurnWithStore(
+        await readJsonBody(request, maxVoiceTurnBodyBytes),
+        env,
+        options.store,
+        context
+      );
+
+      return json(response, 200);
     }
 
     const payload = await handleSessionsRequest(request, context, options.store);

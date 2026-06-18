@@ -5,18 +5,26 @@ import { Panel } from "./Panel.js";
 
 type VoiceSessionPanelProps = {
   audioRef: RefObject<HTMLAudioElement | null>;
+  canRecordAudioTurn: boolean;
   hasPriorActivity: boolean;
   isRunning: boolean;
+  isRecording: boolean;
+  onFinishAudioTurn: () => void;
   onStart: () => void;
+  onStartAudioTurn: () => void;
   onStop: () => void;
   sessionReady: boolean;
 };
 
 export function VoiceSessionPanel({
   audioRef,
+  canRecordAudioTurn,
   hasPriorActivity,
   isRunning,
+  isRecording,
+  onFinishAudioTurn,
   onStart,
+  onStartAudioTurn,
   onStop,
   sessionReady
 }: VoiceSessionPanelProps) {
@@ -41,13 +49,23 @@ export function VoiceSessionPanel({
         <ActionButton disabled={!isRunning} icon="stop" onClick={onStop} variant="secondary">
           End session
         </ActionButton>
+        {canRecordAudioTurn ? (
+          <ActionButton
+            disabled={!isRunning}
+            icon={isRecording ? "send" : "play"}
+            onClick={isRecording ? onFinishAudioTurn : onStartAudioTurn}
+            variant="secondary"
+          >
+            {isRecording ? "Stop and send" : "Record answer"}
+          </ActionButton>
+        ) : null}
       </div>
 
       <div className="session-note">
         <h3>Session behavior</h3>
         <p>
-          The tutor keeps spoken replies concise, asks clarifying questions when needed, and guides the
-          student through the reasoning.
+          The tutor gives one step at a time. Record your answer after each prompt, then wait for the
+          next hint or question.
         </p>
       </div>
 

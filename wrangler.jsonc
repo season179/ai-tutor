@@ -7,10 +7,14 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/voice/session", "/api/sessions", "/api/sessions/*"]
+    "run_worker_first": ["/api/voice/session", "/api/voice/turn", "/api/sessions", "/api/sessions/*"]
   },
   "vars": {
-    "VOICE_BACKEND": "openai-realtime",
+    "VOICE_BACKEND": "openai-voice-pipeline",
+    "OPENAI_TUTOR_MODEL": "gpt-5.5",
+    "OPENAI_TRANSCRIBE_MODEL": "gpt-4o-transcribe",
+    "OPENAI_TTS_MODEL": "gpt-4o-mini-tts",
+    "OPENAI_TTS_VOICE": "marin",
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2",
     "OPENAI_REALTIME_VOICE": "marin",
     "OPENAI_SAFETY_IDENTIFIER": "cloudflare-ai-tutor-user",

@@ -1,12 +1,12 @@
 import { createApiHandlerEnv, handleApiRequest } from "./api-handler.js";
 import { D1SessionStore } from "./d1-session-store.js";
-import { voiceSessionPath } from "./voice-types.js";
+import { voiceSessionPath, voiceTurnPath } from "./voice-types.js";
 
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === voiceSessionPath && request.method === "POST") {
+    if ((url.pathname === voiceSessionPath || url.pathname === voiceTurnPath) && request.method === "POST") {
       const rateLimitResponse = await limitVoiceSessionRequest(env, readCallerKey(request));
       if (rateLimitResponse) {
         return rateLimitResponse;

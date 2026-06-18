@@ -11,6 +11,13 @@ import { MemorySessionStore } from "./memory-session-store.js";
 import { defaultRealtimeModel, defaultRealtimeVoice } from "./realtime-token.js";
 import { maxJsonRequestBodyBytes } from "./session-handler.js";
 import { defaultVoiceBackend } from "./voice-session-service.js";
+import {
+  defaultTranscribeModel,
+  defaultTtsModel,
+  defaultTtsVoice,
+  defaultTutorModel
+} from "./voice-pipeline-service.js";
+import { maxVoiceTurnBodyBytes, voiceTurnPath } from "./voice-types.js";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const publicDir = join(rootDir, "public");
@@ -97,7 +104,7 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL):
   res.end(body);
 }
 
-async function readRequestBody(req: IncomingMessage): Promise<ArrayBuffer> {
+async function readRequestBody(req: IncomingMessage, maxBytes: number): Promise<ArrayBuffer> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
 
@@ -105,7 +112,7 @@ async function readRequestBody(req: IncomingMessage): Promise<ArrayBuffer> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalBytes += buffer.byteLength;
 
-    if (totalBytes > maxJsonRequestBodyBytes) {
+    if (totalBytes > maxBytes) {
       throw new Error(requestBodyTooLargeMessage);
     }
 
@@ -137,7 +144,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   try {
     if (req.method !== "GET" && req.method !== "HEAD") {
-      requestInit.body = await readRequestBody(req);
+      requestInit.body = await readRequestBody(
+        req,
+        url.pathname === voiceTurnPath ? maxVoiceTurnBodyBytes : maxJsonRequestBodyBytes
+      );
     }
   } catch (error) {
     if (error instanceof Error && error.message === requestBodyTooLargeMessage) {
@@ -201,8 +211,12 @@ function getPublicUrl(): string {
 server.listen(port, host, () => {
   console.log(`AI Tutor app running at ${getPublicUrl()}`);
   console.log(`Voice backend: ${process.env.VOICE_BACKEND ?? defaultVoiceBackend}`);
-  console.log(`OpenAI model: ${process.env.OPENAI_REALTIME_MODEL ?? defaultRealtimeModel}`);
-  console.log(`OpenAI voice: ${process.env.OPENAI_REALTIME_VOICE ?? defaultRealtimeVoice}`);
+  console.log(`OpenAI tutor model: ${process.env.OPENAI_TUTOR_MODEL ?? defaultTutorModel}`);
+  console.log(`OpenAI transcription model: ${process.env.OPENAI_TRANSCRIBE_MODEL ?? defaultTranscribeModel}`);
+  console.log(`OpenAI TTS model: ${process.env.OPENAI_TTS_MODEL ?? defaultTtsModel}`);
+  console.log(`OpenAI TTS voice: ${process.env.OPENAI_TTS_VOICE ?? defaultTtsVoice}`);
+  console.log(`OpenAI realtime fallback model: ${process.env.OPENAI_REALTIME_MODEL ?? defaultRealtimeModel}`);
+  console.log(`OpenAI realtime fallback voice: ${process.env.OPENAI_REALTIME_VOICE ?? defaultRealtimeVoice}`);
 });
 
 export { sessionStore };

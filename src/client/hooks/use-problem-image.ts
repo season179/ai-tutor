@@ -271,7 +271,10 @@ export function useProblemImage({
       const image = await getSendableImage(preparedImage, prompt);
 
       activeSession.adapter.sendUserTurn(createVoiceUserTurn(image, prompt));
-      activeSession.adapter.requestReply(activeSession.descriptor.tutorPolicy.imageResponseInstructions);
+
+      if (activeSession.descriptor.provider === "openai-realtime") {
+        activeSession.adapter.requestReply(activeSession.descriptor.tutorPolicy.imageResponseInstructions);
+      }
 
       setStatus("Problem image sent. Waiting for your tutor...", "working");
       setImageMeta(describePreparedImage(image));

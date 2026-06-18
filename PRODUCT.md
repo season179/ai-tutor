@@ -6,11 +6,11 @@ product
 
 ## Users
 
-Students, parents, and tutors use this on a wide desktop monitor while working through homework aloud. They need to start a realtime voice session, share a problem image, ask a focused question, and monitor connection or payload events without losing the thread of the lesson.
+Students, parents, and tutors use this on a wide desktop monitor while working through homework aloud. They need to share a problem image, answer the tutor one turn at a time, and monitor connection or payload events without losing the thread of the lesson.
 
 ## Product Purpose
 
-AI Tutor is a small Realtime API teaching room. It helps a learner talk through homework step by step, optionally attach an image of the problem, and receive concise spoken guidance from a patient tutor. Success means the user can start, share, and recover from errors quickly while staying calm enough to keep thinking.
+AI Tutor is a small voice teaching room. It helps a learner talk through homework step by step, attach an image of the problem, and receive one concise spoken prompt at a time from a patient tutor. Success means the tutor waits for the student instead of revealing the whole path upfront.
 
 ## Brand Personality
 
