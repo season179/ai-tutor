@@ -55,8 +55,10 @@ export function ProblemContextPanel({
   const zoomRef = useRef<HTMLDialogElement>(null);
   const [expanded, setExpanded] = useState(false);
 
-  // A freshly confirmed question collapses the pin; re-expand resets when a new
-  // image is loaded (preview changes) so the next problem opens in review.
+  // A new image (previewUrl change) re-folds an expanded pin so the next problem
+  // opens in review. Confirming does NOT collapse: once "Show problem" expands a
+  // confirmed pin, it stays open until a new photo arrives. There is no plain
+  // collapse affordance today; add one here if that becomes annoying.
   useEffect(() => {
     setExpanded(false);
   }, [previewUrl]);

@@ -11,7 +11,6 @@ import {
   type PreparedImage
 } from "../lib/image-preparation.js";
 import {
-  extractionStatusHint,
   getExtractionAlert,
   legacyReadyExtractionAlert,
   mapOutcomeToExtractionStatus,
@@ -148,11 +147,6 @@ export function useProblemContextStep1({
     },
     [activeSessionId]
   );
-
-  const setPreparedImageFromSend = useCallback((image: PreparedImage) => {
-    setPreparedImage(image);
-    setImageMeta(describePreparedImage(image));
-  }, []);
 
   const resetStep1 = useCallback(() => {
     workflowIdRef.current += 1;
@@ -602,13 +596,10 @@ export function useProblemContextStep1({
 
   return {
     confirmPrompt,
-    emptyMessage,
     extractionAlert,
-    extractionError,
     extractionNotes,
     extractionOutcome,
     extractionStatus,
-    extractionStatusHint: extractionStatusHint(extractionStatus, extractionError),
     handleFileChange,
     handlePromptChange,
     imageMeta,
@@ -624,9 +615,6 @@ export function useProblemContextStep1({
     reExtractQuestion,
     resetStep1,
     retryUpload,
-    selectedImageFile,
-    sessionReady,
-    setPreparedImageFromSend,
     uploadStatus
   };
 }
