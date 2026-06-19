@@ -68,6 +68,34 @@ export type TutorSessionDetail = {
   session: TutorSessionRecord;
 };
 
+/**
+ * The public, answer-free shape of an active step. The verifier's answer key
+ * (`expectedAnswers`, `distractorNudges`, `defaultWrongNudge`) stays server-side and
+ * must never cross the HTTP boundary — only what the child legitimately sees does.
+ */
+export type PublicActiveStep = Pick<ActiveStep, "ask" | "scaffoldAid">;
+
+export type PublicTutorSessionRecord = Omit<TutorSessionRecord, "activeStep"> & {
+  activeStep: PublicActiveStep | null;
+};
+
+export type PublicTutorSessionDetail = Omit<TutorSessionDetail, "session"> & {
+  session: PublicTutorSessionRecord;
+};
+
+export function toPublicActiveStep(step: ActiveStep | null): PublicActiveStep | null {
+  return step ? { ask: step.ask, scaffoldAid: step.scaffoldAid } : null;
+}
+
+export function toPublicTutorSessionRecord(session: TutorSessionRecord): PublicTutorSessionRecord {
+  const { activeStep, ...rest } = session;
+  return { ...rest, activeStep: toPublicActiveStep(activeStep) };
+}
+
+export function toPublicSessionDetail(detail: TutorSessionDetail): PublicTutorSessionDetail {
+  return { ...detail, session: toPublicTutorSessionRecord(detail.session) };
+}
+
 export type CreateTutorSessionRequest = {
   title?: string;
 };
@@ -90,7 +118,7 @@ export type AppendSessionEventRequest = {
   value?: unknown;
 };
 
-export function toTutorSessionSummary(session: TutorSessionRecord): TutorSessionSummary {
+export function toTutorSessionSummary(session: TutorSessionSummary): TutorSessionSummary {
   return {
     createdAt: session.createdAt,
     id: session.id,

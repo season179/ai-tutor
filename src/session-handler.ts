@@ -6,7 +6,13 @@ import {
   parseUpdateTutorSessionRequest
 } from "./session-schema.js";
 import type { SessionStore } from "./session-store.js";
-import { sessionsPath } from "./session-types.js";
+import {
+  sessionsPath,
+  toPublicSessionDetail,
+  toPublicTutorSessionRecord,
+  type PublicTutorSessionDetail,
+  type PublicTutorSessionRecord
+} from "./session-types.js";
 import type { RequestContext } from "./request-context.js";
 import { readLimitedTextBody } from "./read-limited-text.js";
 
@@ -28,17 +34,19 @@ export async function createSession(
   body: unknown,
   context: RequestContext,
   store: SessionStore
-) {
+): Promise<PublicTutorSessionRecord> {
   const request = parseCreateTutorSessionRequest(body);
-  return store.createSession(context.ownerKey, request);
+  return toPublicTutorSessionRecord(await store.createSession(context.ownerKey, request));
 }
 
 export async function getSession(
   sessionId: string,
   context: RequestContext,
   store: SessionStore
-) {
-  return requireSessionResult(await store.getSession(context.ownerKey, sessionId));
+): Promise<PublicTutorSessionDetail> {
+  return toPublicSessionDetail(
+    requireSessionResult(await store.getSession(context.ownerKey, sessionId))
+  );
 }
 
 export async function updateSession(
@@ -69,7 +77,9 @@ export async function updateSession(
     }
   }
 
-  return requireSessionResult(await store.updateSession(context.ownerKey, sessionId, request));
+  return toPublicTutorSessionRecord(
+    requireSessionResult(await store.updateSession(context.ownerKey, sessionId, request))
+  );
 }
 
 export async function appendSessionEvent(

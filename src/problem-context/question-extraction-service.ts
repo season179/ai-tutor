@@ -5,6 +5,7 @@ import {
   defaultProblemFrame,
   frameContainsComputedSolution,
   problemTypes,
+  scrubComputedSolutionFromFrame,
   type ProblemFrame,
   type ProblemQuantity,
   type ProblemType
@@ -145,8 +146,8 @@ export function buildProblemFrame(payload: RawExtractionPayload): ProblemFrame {
 export function normalizeExtractionResponse(
   value: RawExtractionPayload
 ): ExtractQuestionResponse {
-  const frame = buildProblemFrame(value);
-  const question = frame.visibleQuestion;
+  let frame = buildProblemFrame(value);
+  let question = frame.visibleQuestion;
   let outcome = value.outcome;
   let notes = value.notes?.trim() || null;
 
@@ -171,7 +172,10 @@ export function normalizeExtractionResponse(
   if (frameContainsComputedSolution(frame)) {
     outcome = outcome === "extracted" ? "partial" : outcome;
     notes = notes ?? "Extraction may have included a computed answer; please confirm the question.";
-    frame.unknownTarget = frame.unknownTarget?.replace(/\bthe (?:final )?answer is\s+[-+]?\$?\d+/gi, "").trim() || null;
+    // Scrub the worked answer out of every free-text field (not just unknownTarget) and
+    // recompute the question, so a solved value can never reach storage or the model.
+    frame = scrubComputedSolutionFromFrame(frame);
+    question = frame.visibleQuestion;
   }
 
   return {

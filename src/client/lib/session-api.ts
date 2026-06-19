@@ -1,8 +1,8 @@
 import {
   sessionsPath,
   type AppendSessionEventRequest,
-  type TutorSessionDetail,
-  type TutorSessionRecord,
+  type PublicTutorSessionDetail,
+  type PublicTutorSessionRecord,
   type TutorSessionSummary,
   type UpdateTutorSessionRequest
 } from "../../session-types.js";
@@ -41,19 +41,19 @@ export async function listSessions(): Promise<TutorSessionSummary[]> {
   return getJson<TutorSessionSummary[]>(sessionsPath);
 }
 
-export async function createSession(title?: string): Promise<TutorSessionRecord> {
-  return fetchJson<TutorSessionRecord>(sessionsPath, jsonRequestInit("POST", title ? { title } : {}));
+export async function createSession(title?: string): Promise<PublicTutorSessionRecord> {
+  return fetchJson<PublicTutorSessionRecord>(sessionsPath, jsonRequestInit("POST", title ? { title } : {}));
 }
 
-export async function getSession(sessionId: string): Promise<TutorSessionDetail> {
-  return getJson<TutorSessionDetail>(`${sessionsPath}/${sessionId}`);
+export async function getSession(sessionId: string): Promise<PublicTutorSessionDetail> {
+  return getJson<PublicTutorSessionDetail>(`${sessionsPath}/${sessionId}`);
 }
 
 export async function updateSession(
   sessionId: string,
   request: UpdateTutorSessionRequest
-): Promise<TutorSessionRecord> {
-  return fetchJson<TutorSessionRecord>(`${sessionsPath}/${sessionId}`, jsonRequestInit("PATCH", request));
+): Promise<PublicTutorSessionRecord> {
+  return fetchJson<PublicTutorSessionRecord>(`${sessionsPath}/${sessionId}`, jsonRequestInit("PATCH", request));
 }
 
 export async function appendSessionEvent(

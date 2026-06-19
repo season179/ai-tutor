@@ -68,6 +68,54 @@ export function frameContainsComputedSolution(frame: ProblemFrame): boolean {
   );
 }
 
+// Global variants of the detection patterns, for stripping every occurrence of a
+// worked answer out of free text. Givens are deliberately NOT touched (a "24" in
+// "24 stickers" is an input the child needs, not the answer) — only explicit
+// "the answer is N" / trailing "= N" fragments are removed.
+const computedSolutionStripPatterns: readonly RegExp[] = [
+  /\bthe (?:final )?answer(?:['’]s| is)\s+[-+]?\$?\d+(?:\.\d+)?/gi,
+  /=\s*[-+]?\$?\d+(?:\.\d+)?\s*$/g
+];
+
+/**
+ * Remove explicit worked-answer fragments from a single text field, leaving the
+ * question and its givens intact. Returns the cleaned string (possibly empty).
+ */
+export function scrubComputedSolutionFromText(text: string): string {
+  let cleaned = text;
+  for (const pattern of computedSolutionStripPatterns) {
+    cleaned = cleaned.replace(pattern, "");
+  }
+  return cleaned.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Return a copy of the frame with any computed answer scrubbed from its free-text
+ * fields. A numeric-only `unknownTarget` (e.g. "6") is the answer masquerading as the
+ * goal, so it is dropped entirely. Quantities (the givens) are never altered.
+ */
+export function scrubComputedSolutionFromFrame(frame: ProblemFrame): ProblemFrame {
+  const unknownTarget =
+    frame.unknownTarget && numericOnlyPattern.test(frame.unknownTarget.trim())
+      ? null
+      : frame.unknownTarget
+        ? scrubComputedSolutionFromText(frame.unknownTarget) || null
+        : null;
+
+  return {
+    ...frame,
+    extractedText: scrubComputedSolutionFromText(frame.extractedText),
+    visibleQuestion: scrubComputedSolutionFromText(frame.visibleQuestion),
+    unknownTarget,
+    relationships: frame.relationships
+      .map((relationship) => scrubComputedSolutionFromText(relationship))
+      .filter(Boolean),
+    diagramDescription: frame.diagramDescription
+      ? scrubComputedSolutionFromText(frame.diagramDescription) || null
+      : null
+  };
+}
+
 export function defaultProblemFrame(visibleQuestion = ""): ProblemFrame {
   return {
     diagramDescription: null,

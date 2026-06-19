@@ -3,11 +3,12 @@ import { outputLanguageLabel, verifyAnswerCheck } from "./answer-checker.js";
 import { deriveFinalAnswerCheck, deriveFirstCheckableStep, type ActiveStep } from "./active-step.js";
 import { checkGateRestatement } from "./gate-checker.js";
 import { allowedMoves, allowedNextPhases, canTransition, forbiddenMoves } from "./phase-policy.js";
-import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
+import { scrubComputedSolutionFromText, type ProblemContextRecord } from "./problem-context/problem-frame.js";
 import type { RequestContext } from "./request-context.js";
 import type { SessionStore } from "./session-store.js";
 import {
   studentTurnEventMessage,
+  toPublicActiveStep,
   tutorTurnEventMessage,
   type TutorSessionDetail
 } from "./session-types.js";
@@ -608,16 +609,20 @@ function createTutorPrompt(input: TutorTurnInput): string {
   return JSON.stringify(
     {
       allowedMoves: allowedMoves(phase),
-      activeStep: input.activeStep,
+      // The conversational model only ever sees the answer-free step (ask + scaffold);
+      // the verifier's answer key (expectedAnswers/distractorNudges) stays out of the prompt.
+      activeStep: toPublicActiveStep(input.activeStep),
       comprehensionGate: {
         status: input.gateStatus,
-        unknownTarget: input.problemContext?.unknownTarget ?? null
+        unknownTarget: scrubComputedSolutionFromText(input.problemContext?.unknownTarget ?? "") || null
       },
       currentPhase: phase,
       currentStudentTurn: input.studentText,
       currentSession: {
         imageName: input.detail.session.imageName,
-        imagePrompt: input.detail.session.imagePrompt,
+        // Defense-in-depth: scrub any worked answer that slipped through extraction or a
+        // typed-and-confirmed prompt before it can reach the model.
+        imagePrompt: scrubComputedSolutionFromText(input.detail.session.imagePrompt ?? "") || null,
         status: input.detail.session.status,
         supportLevel: input.supportLevel
       },
@@ -625,9 +630,11 @@ function createTutorPrompt(input: TutorTurnInput): string {
       problemFrame: input.problemContext
         ? {
             givens: input.problemContext.quantities,
-            relationships: input.problemContext.relationships,
-            unknownTarget: input.problemContext.unknownTarget,
-            visibleQuestion: input.problemContext.visibleQuestion
+            relationships: input.problemContext.relationships.map((relationship) =>
+              scrubComputedSolutionFromText(relationship)
+            ),
+            unknownTarget: scrubComputedSolutionFromText(input.problemContext.unknownTarget ?? "") || null,
+            visibleQuestion: scrubComputedSolutionFromText(input.problemContext.visibleQuestion)
           }
         : null,
       stepVerifierVerdict: input.stepVerifierVerdict,
