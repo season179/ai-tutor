@@ -57,7 +57,6 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   isRunning: boolean;
   isRecording: boolean;
   getPayloadLimitBytes: () => number | undefined;
-  getSession: () => TutorSessionState | undefined;
   ensureSessionReadyForImage: () => Promise<TutorSessionState>;
   setStatus: (message: string, tone?: StatusTone) => void;
   startAudioTurn: () => void;
@@ -389,8 +388,6 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     return startSession({ greet: false });
   }, [cleanupSession, setStatus, startSession]);
 
-  const getSession = useCallback(() => sessionRef.current, []);
-
   const getPayloadLimitBytes = useCallback(
     () => sessionRef.current?.adapter.getPayloadLimitBytes(),
     []
@@ -412,7 +409,6 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     ensureSessionReadyForImage,
     finishAudioTurn,
     getPayloadLimitBytes,
-    getSession,
     isRecording,
     isRunning,
     setStatus,

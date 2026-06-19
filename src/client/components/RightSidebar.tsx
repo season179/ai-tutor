@@ -1,46 +1,19 @@
-import type { RefObject } from "react";
-
 import { classNames } from "../lib/class-names.js";
 import { EventLogPanel } from "./EventLogPanel.js";
-import { VoiceSessionPanel } from "./VoiceSessionPanel.js";
 
 type RightSidebarProps = {
-  audioRef: RefObject<HTMLAudioElement | null>;
-  canRecordAudioTurn: boolean;
   collapsed: boolean;
-  hasPriorActivity: boolean;
-  isRecording: boolean;
-  isRunning: boolean;
   logText: string;
-  onFinishAudioTurn: () => void;
-  onStart: () => void;
-  onStartAudioTurn: () => void;
-  onStop: () => void;
   onToggleCollapsed: () => void;
-  sessionReady: boolean;
 };
 
-export function RightSidebar({
-  audioRef,
-  canRecordAudioTurn,
-  collapsed,
-  hasPriorActivity,
-  isRecording,
-  isRunning,
-  logText,
-  onFinishAudioTurn,
-  onStart,
-  onStartAudioTurn,
-  onStop,
-  onToggleCollapsed,
-  sessionReady
-}: RightSidebarProps) {
+export function RightSidebar({ collapsed, logText, onToggleCollapsed }: RightSidebarProps) {
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
     <aside
       className={classNames("right-sidebar", collapsed && "right-sidebar--collapsed")}
-      aria-label="Voice and session log"
+      aria-label="Session log"
     >
       <div className="right-sidebar-header">
         <button
@@ -56,20 +29,6 @@ export function RightSidebar({
       </div>
 
       <div className="right-sidebar-stack">
-        <VoiceSessionPanel
-          audioRef={audioRef}
-          canRecordAudioTurn={canRecordAudioTurn}
-          collapsed={collapsed}
-          hasPriorActivity={hasPriorActivity}
-          isRecording={isRecording}
-          isRunning={isRunning}
-          onFinishAudioTurn={onFinishAudioTurn}
-          onStart={onStart}
-          onStartAudioTurn={onStartAudioTurn}
-          onStop={onStop}
-          sessionReady={sessionReady}
-        />
-
         {collapsed ? null : <EventLogPanel logText={logText} />}
       </div>
     </aside>

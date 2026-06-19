@@ -2,7 +2,11 @@ import { HttpError, type JsonValue } from "./http-error.js";
 import { allowedMoves, canTransition, forbiddenMoves } from "./phase-policy.js";
 import type { RequestContext } from "./request-context.js";
 import type { SessionStore } from "./session-store.js";
-import type { TutorSessionDetail } from "./session-types.js";
+import {
+  studentTurnEventMessage,
+  tutorTurnEventMessage,
+  type TutorSessionDetail
+} from "./session-types.js";
 import { isJsonObject } from "./schema-parser.js";
 import {
   gateForbiddenMoves,
@@ -120,7 +124,7 @@ export async function handleVoicePipelineTurnWithStore(
     await store.updateSession(requestContext.ownerKey, request.sessionId, { status: "active" });
   }
   await store.appendEvent(requestContext.ownerKey, request.sessionId, {
-    message: request.image && !request.audio ? "Problem image submitted" : "Student turn",
+    message: request.image && !request.audio ? "Problem image submitted" : studentTurnEventMessage,
     value: {
       hasAudio: Boolean(request.audio),
       hasImage: Boolean(request.image),
@@ -128,7 +132,7 @@ export async function handleVoicePipelineTurnWithStore(
     }
   });
   await store.appendEvent(requestContext.ownerKey, request.sessionId, {
-    message: "Tutor turn",
+    message: tutorTurnEventMessage,
     value: {
       lesson: publicLesson,
       move: action.move,

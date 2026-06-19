@@ -142,7 +142,7 @@ export class D1SessionStore implements SessionStore {
         `SELECT id, session_id, message, value_json, created_at
          FROM session_events
          WHERE session_id = ?
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, id DESC
          LIMIT ?`
       )
       .bind(sessionId, maxSessionEvents)

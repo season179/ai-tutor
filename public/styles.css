@@ -185,8 +185,8 @@ p {
 
 .workspace-main {
   display: grid;
-  gap: 1rem;
-  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.85rem;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
   min-width: 0;
   padding: 1.25rem;
@@ -607,7 +607,7 @@ p {
   display: grid;
   flex: 1;
   gap: 1rem;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -675,36 +675,6 @@ p {
   font-size: 0.9rem;
   line-height: 1.42;
   margin-bottom: 0;
-}
-
-.controls {
-  display: grid;
-  gap: 0.72rem;
-  margin-bottom: 1rem;
-}
-
-.controls--collapsed {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
-  margin-bottom: 0;
-}
-
-.voice-control-compact {
-  align-items: center;
-  block-size: var(--sidebar-tile, 2.6rem);
-  display: inline-flex;
-  inline-size: var(--sidebar-tile, 2.6rem);
-  justify-content: center;
-  min-height: 0;
-  padding: 0;
-}
-
-.session-panel--collapsed {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
 }
 
 .primary-action {
@@ -1109,4 +1079,317 @@ pre {
 .workspace[aria-busy="true"] {
   background: var(--surface-low);
   block-size: 100vh;
+}
+
+/* ---------- center column: Spine · Stream · Anchor (M2) ---------- */
+/* Lifted from docs/mockups/center-column.html and wired to live session state. */
+
+/* the Spine — phase rail */
+.rail {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow);
+  display: flex;
+  gap: 0.25rem;
+  overflow: hidden;
+  padding: 0.5rem 0.7rem;
+}
+
+.station {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 720;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.station .pip {
+  background: var(--line-strong);
+  block-size: 0.62rem;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  inline-size: 0.62rem;
+}
+
+.station--done {
+  color: var(--ink-soft);
+}
+
+.station--done .pip {
+  background: var(--success);
+}
+
+.station--active {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.station--active .pip {
+  background: var(--primary);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.station--next {
+  color: var(--disabled-ink);
+}
+
+.station--next .pip {
+  background: transparent;
+  border: 1.5px dashed var(--disabled-ink);
+}
+
+.rail .conn {
+  background: var(--line);
+  block-size: 1.5px;
+  flex: 1 1 auto;
+  max-inline-size: 1.4rem;
+  min-inline-size: 0.5rem;
+}
+
+.rail .conn--next {
+  background: transparent;
+  border-top: 1.5px dashed var(--disabled-ink);
+  opacity: 0.7;
+}
+
+/* the Stream — problem pin, target chip, transcript */
+.cc-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.1rem 0.15rem;
+}
+
+.cc-stream > .panel {
+  flex: 0 0 auto;
+}
+
+.target-row {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.target-chip {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 740;
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.target-chip .tlabel {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.target-chip--empty {
+  background: transparent;
+  border: 1.5px dashed var(--line-strong);
+  color: var(--muted);
+}
+
+.transcript {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+}
+
+.turn {
+  display: flex;
+  gap: 0.55rem;
+  max-inline-size: 100%;
+}
+
+.turn--coach {
+  align-self: stretch;
+}
+
+.turn--child {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  max-inline-size: 78%;
+}
+
+.echo-mark {
+  align-items: center;
+  background: var(--surface-rest);
+  border: 1px solid var(--line);
+  block-size: 1.85rem;
+  border-radius: 999px;
+  display: flex;
+  flex: 0 0 auto;
+  inline-size: 1.85rem;
+  justify-content: center;
+}
+
+.echo-mark svg {
+  block-size: 1rem;
+  color: var(--primary);
+  inline-size: 1rem;
+}
+
+.bubble {
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  padding: 0.6rem 0.8rem;
+}
+
+.turn--coach .bubble {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.turn--child .bubble {
+  background: var(--primary);
+  border: 1px solid transparent;
+  color: var(--primary-ink);
+}
+
+.turn--child .mic {
+  font-size: 0.66rem;
+  opacity: 0.8;
+}
+
+/* the Anchor — focus card + voice bar */
+.cc-anchor {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.focus-card {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px -10px oklch(0.22 0.035 158 / 0.3), 0 2px 8px var(--shadow);
+  padding: 1rem 1.1rem;
+}
+
+.focus-kicker {
+  align-items: center;
+  color: var(--primary);
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 760;
+  gap: 0.5rem;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.ask {
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 780;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+}
+
+.voice-bar {
+  align-items: center;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.talk {
+  align-items: center;
+  background: var(--primary);
+  border: 0;
+  border-radius: 11px;
+  color: var(--primary-ink);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1 1 auto;
+  font-size: 0.98rem;
+  font-weight: 760;
+  gap: 0.6rem;
+  justify-content: center;
+  min-height: 3.1rem;
+  padding: 0 1rem;
+}
+
+.talk .mic {
+  block-size: 1.05rem;
+  inline-size: 1.05rem;
+}
+
+.talk:not(:disabled):hover {
+  background: var(--primary-hover);
+}
+
+.talk:disabled {
+  background: var(--disabled-bg);
+  color: var(--disabled-ink);
+  cursor: not-allowed;
+}
+
+.wave {
+  align-items: center;
+  block-size: 1rem;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.wave span {
+  animation: wave 1s ease-in-out infinite;
+  background: var(--primary-ink);
+  border-radius: 999px;
+  inline-size: 3px;
+  opacity: 0.9;
+}
+
+.wave span:nth-child(1) { block-size: 35%; animation-delay: 0s; }
+.wave span:nth-child(2) { block-size: 75%; animation-delay: 0.12s; }
+.wave span:nth-child(3) { block-size: 100%; animation-delay: 0.24s; }
+.wave span:nth-child(4) { block-size: 60%; animation-delay: 0.36s; }
+.wave span:nth-child(5) { block-size: 40%; animation-delay: 0.48s; }
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1); }
+}
+
+.vb-btn {
+  align-items: center;
+  background: var(--quiet-button);
+  border: 0;
+  border-radius: 11px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.88rem;
+  font-weight: 740;
+  gap: 0.4rem;
+  min-height: 3.1rem;
+  padding: 0 0.85rem;
+}
+
+.vb-btn svg {
+  block-size: 0.95rem;
+  inline-size: 0.95rem;
+}
+
+.vb-btn:not(:disabled):hover {
+  background: var(--quiet-button-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wave span {
+    animation: none;
+    transform: scaleY(0.8);
+  }
 }

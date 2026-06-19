@@ -43,6 +43,14 @@ export type SessionEventRecord = {
   value: unknown;
 };
 
+/**
+ * Canonical event-message labels for a completed turn. The turn pipeline writes
+ * these (server) and the client transcript reads them — keeping them as one
+ * shared symbol so the two sides can never silently drift apart on a rename.
+ */
+export const studentTurnEventMessage = "Student turn";
+export const tutorTurnEventMessage = "Tutor turn";
+
 export type TutorSessionDetail = {
   events: SessionEventRecord[];
   session: TutorSessionRecord;
