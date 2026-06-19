@@ -162,6 +162,16 @@ test("handleExtractQuestionRequest sends an R2 URL to OpenAI and parses the ques
 
     const extractedEvent = updated?.events.find((event) => event.message === "Question extracted");
     assert.ok(extractedEvent);
+    // The event must surface the actual extracted text so bad extractions are troubleshootable
+    // from the session log alone, without re-running vision or hitting the DB.
+    const eventValue = extractedEvent.value as {
+      question: string;
+      extractedText: string;
+      questionLength: number;
+    };
+    assert.equal(eventValue.question, "What is the value of x?");
+    assert.equal(eventValue.extractedText, "What is the value of x?");
+    assert.equal(eventValue.questionLength, "What is the value of x?".length);
   } finally {
     globalThis.fetch = originalFetch;
   }

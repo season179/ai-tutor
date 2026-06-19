@@ -9,7 +9,10 @@ import {
   resolvePromptConfirmedForSession,
   shouldPrefillExtractedQuestion
 } from "../src/client/lib/problem-context-extraction.ts";
-import { normalizeExtractionResponse } from "../dist/problem-context/question-extraction-service.js";
+import {
+  buildProblemFrame,
+  normalizeExtractionResponse
+} from "../dist/problem-context/question-extraction-service.js";
 
 test("mapOutcomeToExtractionStatus maps review and empty outcomes", () => {
   assert.equal(mapOutcomeToExtractionStatus("extracted"), "ready");
@@ -113,4 +116,69 @@ test("normalizeExtractionResponse downgrades very short extracted questions to p
 
   assert.equal(normalized.outcome, "partial");
   assert.equal(normalized.question, "Solve x");
+});
+
+test("normalizeExtractionResponse preserves the full word-problem statement with its givens", () => {
+  // Mirrors the regression where a photo returned only the final question sentence
+  // ("校长能够购买多少个科学仪器？") and dropped the givens. `question` must carry the
+  // complete statement — every setup sentence plus the question — so a student reading
+  // only `question` has everything needed to solve it.
+  const fullStatement =
+    "智民小学获得 RM70 000 捐款。校长拨出 RM54 000 给图书馆，剩下的钱要购买单价是 RM1 980 的科学仪器。校长能够购买多少个科学仪器？";
+
+  const normalized = normalizeExtractionResponse({
+    confidence: "high",
+    diagramDescription: null,
+    extractedText: fullStatement,
+    languageIsSubject: false,
+    likelySkillKeys: [],
+    notes: null,
+    outcome: "extracted",
+    problemType: "word_problem",
+    quantities: [
+      { label: "捐款总额", raw: "RM70 000" },
+      { label: "图书馆拨款", raw: "RM54 000" },
+      { label: "科学仪器单价", raw: "RM1 980" }
+    ],
+    question: fullStatement,
+    relationships: ["剩下的钱 = 捐款总额 − 图书馆拨款"],
+    taskLanguage: "zh",
+    unknownTarget: "能购买多少个科学仪器"
+  });
+
+  assert.equal(normalized.outcome, "extracted");
+  assert.equal(normalized.question, fullStatement);
+  assert.equal(normalized.frame.visibleQuestion, fullStatement);
+  // The structured quantity metadata supplements but does not replace the full prose.
+  assert.equal(normalized.frame.quantities.length, 3);
+  // The "剩下的钱 = 捐款总额 − 图书馆拨款" relationship contains "=", but its left side is
+  // Chinese (not an [A-Za-z] variable) and its right side is not a bare number, so the
+  // computed-answer scrub guard (frameContainsComputedSolution) correctly leaves this
+  // `extracted` outcome untouched. A real worked answer ("= 3") WOULD be caught.
+  assert.equal(normalized.frame.relationships.length, 1);
+});
+
+test("buildProblemFrame lets the full question win over a fragmentary extractedText", () => {
+  // The model sometimes returns a fragmentary extractedText (e.g. only the givens)
+  // but a complete question. `question` is load-bearing: it must win so the full
+  // statement reaches the student, not a fragment.
+  const fullStatement = "A shop has 12 apples. It sells 5. How many are left?";
+  const fragmentaryText = "A shop has 12 apples.";
+  const frame = buildProblemFrame({
+    confidence: "high",
+    diagramDescription: null,
+    extractedText: fragmentaryText,
+    languageIsSubject: false,
+    likelySkillKeys: [],
+    notes: null,
+    outcome: "extracted",
+    problemType: "word_problem",
+    quantities: [],
+    question: fullStatement,
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: "how many apples are left"
+  });
+
+  assert.equal(frame.visibleQuestion, fullStatement);
 });

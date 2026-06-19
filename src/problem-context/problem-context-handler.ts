@@ -88,9 +88,11 @@ export async function handleExtractQuestionRequest(
     message: "Question extracted",
     value: {
       confidence: extraction.confidence,
+      extractedText: extraction.frame.extractedText,
       notes: extraction.notes,
       objectKey: request.objectKey,
       outcome: extraction.outcome,
+      question: extraction.question,
       questionLength: extraction.question.length,
       requiresConfirmation: extraction.requiresConfirmation,
       unknownTarget: extraction.frame.unknownTarget

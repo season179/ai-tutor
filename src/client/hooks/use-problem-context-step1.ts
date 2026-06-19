@@ -221,9 +221,11 @@ export function useProblemContextStep1({
       setStatus(extractionReadyMessage(result.outcome), nextStatus === "ready" ? "ready" : "error");
       logEvent("Question extracted", {
         confidence: result.confidence,
+        extractedText: result.frame.extractedText,
         notes: result.notes,
         objectKey: nextObjectKey,
         outcome: result.outcome,
+        question: result.question,
         requiresConfirmation: result.requiresConfirmation
       });
 

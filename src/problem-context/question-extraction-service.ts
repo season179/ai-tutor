@@ -22,8 +22,11 @@ export type QuestionExtractionServiceEnv = {
 };
 
 const extractionInstructions = `Extract the homework problem *frame* from this image — what is given and what the student must find.
-Return the visible question text, givens (quantities and relationships), the unknown target, problem type, and task language.
-Never include a computed final answer, solved value, or arithmetic result — only what the problem asks the student to find.
+
+"question" is the load-bearing field. It MUST be the COMPLETE, self-contained problem statement, transcribed verbatim from the image — everything a student must read to solve the problem. For word problems the givens are usually embedded in the prose, so include every setup sentence leading up to AND the final question being asked. A student reading only "question" must have everything needed to solve it — never put just the final interrogative sentence there.
+"quantities" and "relationships" are supplementary structured metadata that summarize the givens; they do not replace the full prose in "question".
+
+Never include a computed final answer, solved value, or arithmetic result in any field — only what the problem asks the student to find.
 If multiple complete problems exist, return the first complete one and set outcome to multiple_questions.
 If the image is not a homework or school problem, set outcome to not_a_problem.
 If no readable question is visible, set outcome to none and explain in notes.
