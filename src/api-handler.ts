@@ -45,6 +45,7 @@ export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv 
     OPENAI_TTS_MODEL: source.OPENAI_TTS_MODEL,
     OPENAI_TTS_VOICE: source.OPENAI_TTS_VOICE,
     OPENAI_TUTOR_MODEL: source.OPENAI_TUTOR_MODEL,
+    OPENAI_VERIFIER_MODEL: source.OPENAI_VERIFIER_MODEL,
     VOICE_BACKEND: source.VOICE_BACKEND
   };
 }

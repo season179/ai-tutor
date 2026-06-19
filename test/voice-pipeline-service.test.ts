@@ -800,6 +800,161 @@ test("grades the final answer and advances to memory_write", async () => {
   }
 });
 
+const multiplicationFrame = {
+  diagramDescription: null,
+  extractedText: "There are 5 boxes of 4 pencils. How many pencils are there in total?",
+  languageIsSubject: false,
+  likelySkillKeys: [],
+  problemType: "word_problem" as const,
+  quantities: [
+    { label: "boxes", raw: "5" },
+    { label: "pencils per box", raw: "4" }
+  ],
+  relationships: ["5 boxes of 4 pencils each"],
+  taskLanguage: "en",
+  unknownTarget: "how many pencils in total",
+  visibleQuestion: "How many pencils are there in total?"
+};
+
+function isVerifierRequest(init?: RequestInit): boolean {
+  if (!init?.body) {
+    return false;
+  }
+
+  const body = JSON.parse(String(init.body)) as { instructions?: string };
+  return body.instructions?.includes("narrow answer verifier") ?? false;
+}
+
+async function seedNonSharingStepLoop(store: MemorySessionStore, sessionId: string): Promise<void> {
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: multiplicationFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId
+  });
+  await store.advanceSessionPhase(ownerKey, sessionId, "session_open", {
+    activeStep: null,
+    currentPhase: "step_loop",
+    gateStatus: "complete",
+    supportLevel: 1
+  });
+}
+
+test("grades a non-equal-sharing step through the LLM verifier track", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "LLM verifier" });
+  await seedNonSharingStepLoop(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  let tutorPrompt = "";
+  const affirm = {
+    move: "feedback_with_why",
+    nextPhase: "step_loop",
+    spokenUtterance: "Yes — twenty pencils, because five groups of four is twenty."
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isVerifierRequest(init)) {
+        return Response.json({
+          output_text: JSON.stringify({
+            confidence: "high",
+            correctionHint: null,
+            misconceptionKey: null,
+            studentStatus: "correct"
+          })
+        });
+      }
+
+      tutorPrompt = String(init?.body ?? "");
+      return Response.json({ output_text: JSON.stringify(affirm) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "I think there are twenty pencils in total" },
+      env,
+      store,
+      context
+    );
+
+    assert.equal(response.lesson.studentStatus, "correct");
+    assert.match(tutorPrompt, /separate verifier already graded/i);
+
+    const detail = await store.getSession(ownerKey, session.id);
+    const verifyEvent = detail?.events.find((event) => event.message === "Step verify");
+    assert.ok(verifyEvent);
+    assert.equal((verifyEvent.value as { method?: string }).method, "llm");
+    assert.equal((verifyEvent.value as { studentStatus?: string }).studentStatus, "correct");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fails safe to unknown and tells the model not to self-certify when the verifier errors", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Verifier down" });
+  await seedNonSharingStepLoop(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  let tutorPrompt = "";
+  const probe = {
+    move: "elicit",
+    nextPhase: "step_loop",
+    spokenUtterance: "Tell me how you worked that out."
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isVerifierRequest(init)) {
+        return new Response("upstream error", { status: 500 });
+      }
+
+      tutorPrompt = String(init?.body ?? "");
+      return Response.json({ output_text: JSON.stringify(probe) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "I think it's twenty pencils" },
+      env,
+      store,
+      context
+    );
+
+    assert.equal(response.lesson.studentStatus, "unknown");
+    assert.match(tutorPrompt, /could NOT confirm/i);
+
+    const detail = await store.getSession(ownerKey, session.id);
+    const verifyEvent = detail?.events.find((event) => event.message === "Step verify");
+    assert.ok(verifyEvent);
+    assert.equal((verifyEvent.value as { studentStatus?: string }).studentStatus, "unknown");
+    // Unknown must never advance the phase — only a confirmed correct does.
+    assert.equal(detail?.session.currentPhase, "step_loop");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("persists reflection and advances to wrap_up", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Reflection" });

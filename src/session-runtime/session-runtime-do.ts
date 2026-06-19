@@ -57,7 +57,11 @@ export class SessionRuntimeDO extends DurableObject<SessionRuntimeEnv> {
       value: {
         kind: "idle_nudge",
         supportLevel: detail.session.supportLevel,
-        text: hintNudgeForSupportLevel(detail.session.supportLevel)
+        // Derive the nudge from the live step (answer-free fields only), not a fixed script.
+        text: hintNudgeForSupportLevel(detail.session.supportLevel, {
+          ask: detail.session.activeStep?.ask ?? null,
+          scaffoldAid: detail.session.activeStep?.scaffoldAid ?? null
+        })
       }
     });
 

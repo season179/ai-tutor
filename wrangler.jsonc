@@ -27,6 +27,7 @@
     "VOICE_BACKEND": "openai-voice-pipeline",
     "OPENAI_TUTOR_MODEL": "gpt-5.5",
     "OPENAI_GATE_CHECKER_MODEL": "gpt-5.5",
+    "OPENAI_VERIFIER_MODEL": "gpt-5.5",
     "OPENAI_TRANSCRIBE_MODEL": "gpt-4o-transcribe",
     "OPENAI_TTS_MODEL": "gpt-4o-mini-tts",
     "OPENAI_TTS_VOICE": "marin",

@@ -99,9 +99,16 @@ export function deriveSharingQuotient(frame: ProblemFrame): number | null {
 }
 
 /**
- * Derives the framed-goal answer check for equal-sharing word problems.
+ * Derives the framed-goal answer check. Equal-sharing is the high-precision fast path;
+ * a tightly-guarded add/subtract path covers the other common single-operation problems.
+ * Anything ambiguous returns null so the LLM verifier track grades it instead — the
+ * deterministic track only ever fires when it can compute the answer with confidence.
  */
 export function deriveFinalAnswerCheck(frame: ProblemFrame): ActiveStep | null {
+  return deriveSharingAnswerCheck(frame) ?? deriveArithmeticAnswerCheck(frame);
+}
+
+function deriveSharingAnswerCheck(frame: ProblemFrame): ActiveStep | null {
   const quotient = deriveSharingQuotient(frame);
   const friendCount = parseFriendCount(frame);
   const total = parseTotalQuantity(frame);
@@ -121,6 +128,93 @@ export function deriveFinalAnswerCheck(frame: ProblemFrame): ActiveStep | null {
     distractorNudges,
     expectedAnswers: [quotient],
     scaffoldAid: `${total} ÷ ${friendCount}`
+  };
+}
+
+const additionCuePattern =
+  /\b(?:altogether|in total|in all|combined|total number|sum of|jumlah|semua sekali|kesemua)\b/i;
+
+// "more"/"less" alone are ambiguous (gained-N-more vs N-more-than), so only the
+// comparison and remainder framings count as a subtraction cue.
+const subtractionCuePattern =
+  /\b(?:left over|left|remaining|remain|fewer|difference|how (?:many|much) more|how many fewer|baki|tinggal|berapa lagi)\b/i;
+
+// Grouping / multiplicative / sharing language means the answer is a product or quotient,
+// not a sum or difference — even when an "altogether"/"in total" cue is also present
+// ("5 boxes of 4, how many in total?"). Any of these voids the add/subtract fast path.
+const multiplicativeCuePattern =
+  /\b(?:each|every|per|times|twice|double|triple|groups? of|rows? of|boxes? of|packs? of|bags? of|multiplied|divided|shared|split|equally|setiap|sekumpulan|didarab|dibahagi)\b|×/i;
+
+/** Every clean integer quantity in the frame, in worksheet order. */
+function parseGivenNumbers(frame: ProblemFrame): number[] {
+  const numbers: number[] = [];
+  for (const quantity of frame.quantities) {
+    const value = parseNumber(quantity.raw);
+    if (value !== null && Number.isInteger(value)) {
+      numbers.push(value);
+    }
+  }
+  return numbers;
+}
+
+/**
+ * Computes the answer for a simple two-quantity add or subtract problem. Guards keep
+ * precision high: exactly two integer givens, exactly one (non-conflicting) operation cue,
+ * and a sensible non-negative integer result — otherwise null, deferring to the LLM track.
+ */
+function deriveArithmeticAnswerCheck(frame: ProblemFrame): ActiveStep | null {
+  const givens = parseGivenNumbers(frame);
+  if (givens.length !== 2) {
+    return null;
+  }
+
+  const haystack = [frame.visibleQuestion, frame.extractedText, ...frame.relationships].join(" ");
+
+  // A grouping/multiplicative/sharing cue means the structure isn't a clean add or
+  // subtract — defer to the LLM verifier rather than risk a confident wrong grade.
+  if (multiplicativeCuePattern.test(haystack)) {
+    return null;
+  }
+
+  const isAddition = additionCuePattern.test(haystack);
+  const isSubtraction = subtractionCuePattern.test(haystack);
+
+  // Need exactly one unambiguous operation cue.
+  if (isAddition === isSubtraction) {
+    return null;
+  }
+
+  const ask = frame.visibleQuestion.trim();
+  if (!ask) {
+    return null;
+  }
+
+  const [a, b] = givens as [number, number];
+  const larger = Math.max(a, b);
+  const smaller = Math.min(a, b);
+  const answer = isAddition ? a + b : larger - smaller;
+  const wrongOperation = isAddition ? larger - smaller : a + b;
+
+  if (!Number.isInteger(answer) || answer < 0) {
+    return null;
+  }
+
+  const malay = requiresMalayPrompt(frame);
+  const distractorNudges: Record<string, string> = {};
+  if (wrongOperation !== answer) {
+    distractorNudges[String(wrongOperation)] = isAddition
+      ? "That looks like the difference — but we're putting them together. Try adding."
+      : "That looks like the total — but we're taking one away. Try subtracting.";
+  }
+
+  return {
+    ask,
+    defaultWrongNudge: malay
+      ? "Belum tepat — semak sama ada perlu tambah atau tolak, kemudian cuba lagi."
+      : "Not quite — check whether you need to add or take away, then try again.",
+    distractorNudges,
+    expectedAnswers: [answer],
+    scaffoldAid: isAddition ? `${a} + ${b}` : `${larger} − ${smaller}`
   };
 }
 

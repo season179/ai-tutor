@@ -3,17 +3,54 @@ export const hintWaitMs = 60_000;
 
 export const hintTimerEventMessage = "Hint timer";
 
-export function hintNudgeForSupportLevel(supportLevel: number): string {
-  switch (supportLevel) {
-    case 0:
-      return "Take your time — point to each friend as you count.";
-    case 1:
-      return "Hint: one sticker for each friend first. How many friends are there?";
-    case 2:
-      return "Hint: count the friends — that's how many stickers if everyone gets one.";
-    default:
-      return "Hint: try giving one sticker to each friend. How many is that?";
+/**
+ * The live, answer-free step context an idle hint is built from. Both fields come from the
+ * public projection of the active step — never the verifier's answer key.
+ */
+export type HintContext = {
+  ask: string | null;
+  scaffoldAid: string | null;
+};
+
+const emptyHintContext: HintContext = { ask: null, scaffoldAid: null };
+
+/**
+ * Builds an idle nudge from the live step, escalating with support level. It only ever uses
+ * the answer-free `ask` and `scaffoldAid` (e.g. "24 ÷ 4") — never the answer — and falls back
+ * to generic encouragement when there is no active step yet, so it works for any problem
+ * rather than the hardcoded sticker script it replaced.
+ */
+export function hintNudgeForSupportLevel(
+  supportLevel: number,
+  context: HintContext = emptyHintContext
+): string {
+  const ask = context.ask?.trim() || null;
+  const scaffoldAid = context.scaffoldAid?.trim() || null;
+
+  if (supportLevel <= 0) {
+    return ask
+      ? `Take your time — what's the first thing you could try for "${ask}"?`
+      : "Take your time — what's the first thing you could try?";
   }
+
+  if (supportLevel === 1) {
+    return ask
+      ? `Hint: think about "${ask}". What could you do first?`
+      : "Hint: what's the first small step you could take?";
+  }
+
+  if (supportLevel === 2) {
+    if (scaffoldAid) {
+      return `Hint: try working it out as ${scaffoldAid}.`;
+    }
+    return ask
+      ? `Hint: focus on "${ask}" — one small step at a time.`
+      : "Hint: try the first small step, even if you're not sure.";
+  }
+
+  return scaffoldAid
+    ? `Hint: set it up as ${scaffoldAid} and take it one step at a time.`
+    : "Hint: let's do the very first step together — what could come first?";
 }
 
 export function shouldArmHintTimer(phase: string): boolean {

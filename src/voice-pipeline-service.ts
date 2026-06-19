@@ -1,7 +1,8 @@
 import { HttpError, type JsonValue } from "./http-error.js";
-import { outputLanguageLabel, verifyAnswerCheck } from "./answer-checker.js";
+import { outputLanguageLabel } from "./answer-checker.js";
 import { deriveFinalAnswerCheck, deriveFirstCheckableStep, type ActiveStep } from "./active-step.js";
 import { checkGateRestatement } from "./gate-checker.js";
+import { gradeStudentTurn } from "./verifier.js";
 import { allowedMoves, allowedNextPhases, canTransition, forbiddenMoves } from "./phase-policy.js";
 import { scrubComputedSolutionFromText, type ProblemContextRecord } from "./problem-context/problem-frame.js";
 import type { RequestContext } from "./request-context.js";
@@ -12,11 +13,7 @@ import {
   tutorTurnEventMessage,
   type TutorSessionDetail
 } from "./session-types.js";
-import {
-  shouldVerifyActiveStep,
-  verifyActiveStep,
-  type StepVerifierVerdict
-} from "./step-verifier.js";
+import type { StepVerifierVerdict } from "./step-verifier.js";
 import {
   gateForbiddenMoves,
   sessionPhases,
@@ -67,6 +64,7 @@ export type VoicePipelineServiceEnv = {
   OPENAI_TTS_MODEL: string | undefined;
   OPENAI_TTS_VOICE: string | undefined;
   OPENAI_TUTOR_MODEL: string | undefined;
+  OPENAI_VERIFIER_MODEL?: string | undefined;
 };
 
 type VoicePipelineOptions = {
@@ -130,12 +128,17 @@ export async function handleVoicePipelineTurnWithStore(
     activeStep = seedActiveStepForPhase(fromPhase, problemContext!);
   }
 
-  let checkerVerdict: StepVerifierVerdict | null = null;
-  if (activeStep && shouldRunStepVerifier(fromPhase, gateStatus, studentText)) {
-    checkerVerdict = verifyActiveStep(activeStep, studentText);
-  } else if (activeStep && shouldRunAnswerChecker(fromPhase, gateStatus, studentText)) {
-    checkerVerdict = verifyAnswerCheck(activeStep, problemContext!, studentText);
-  }
+  const checkerVerdict = await gradeStudentTurn(
+    {
+      activeStep,
+      frame: problemContext,
+      gateStatus,
+      lastTutorAsk: latestTutorAsk(detail),
+      phase: fromPhase,
+      studentText
+    },
+    env
+  );
 
   const supportLevel = nextSupportLevel(detail.session.supportLevel, checkerVerdict, studentText);
 
@@ -223,8 +226,10 @@ export async function handleVoicePipelineTurnWithStore(
       value: {
         chip: checkerVerdict.chip,
         chipLabel: checkerVerdict.chipLabel,
+        confidence: checkerVerdict.confidence,
         correctionHint: checkerVerdict.correctionHint,
         method: checkerVerdict.method,
+        misconceptionKey: checkerVerdict.misconceptionKey,
         studentAnswer: checkerVerdict.studentAnswer,
         studentStatus: checkerVerdict.studentStatus,
         studentText
@@ -278,12 +283,20 @@ function seedActiveStepForPhase(phase: SessionPhase, frame: ProblemContextRecord
   return deriveFirstCheckableStep(frame);
 }
 
-function shouldRunAnswerChecker(
-  phase: SessionPhase,
-  gateStatus: ComprehensionGateStatus | null,
-  studentText: string
-): boolean {
-  return phase === "answer_check" && gateStatus === "complete" && shouldVerifyActiveStep(studentText);
+/** The text of the most recent tutor turn — what the child is answering this turn. */
+function latestTutorAsk(detail: TutorSessionDetail): string | null {
+  for (const event of detail.events) {
+    if (event.message !== tutorTurnEventMessage) {
+      continue;
+    }
+
+    const value = event.value;
+    if (value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string") {
+      return (value as { text: string }).text;
+    }
+  }
+
+  return null;
 }
 
 function applyServerPhaseOverrides(input: {
@@ -324,20 +337,12 @@ function applyServerPhaseOverrides(input: {
   return { activeStep, toPhase };
 }
 
-function shouldRunStepVerifier(
-  phase: SessionPhase,
-  gateStatus: ComprehensionGateStatus | null,
-  studentText: string
-): boolean {
-  return phase === "step_loop" && gateStatus === "complete" && shouldVerifyActiveStep(studentText);
-}
-
 function nextSupportLevel(
   current: SupportLevel,
   verdict: StepVerifierVerdict | null,
   studentText: string
 ): SupportLevel {
-  if (!verdict || verdict.method === "skipped") {
+  if (!verdict) {
     return current;
   }
 
@@ -345,7 +350,11 @@ function nextSupportLevel(
     return Math.max(0, current - 1) as SupportLevel;
   }
 
-  if (verdict.studentStatus === "incorrect" || verdict.studentStatus === "partial") {
+  if (
+    verdict.studentStatus === "incorrect" ||
+    verdict.studentStatus === "partial" ||
+    verdict.studentStatus === "stuck"
+  ) {
     return Math.min(4, current + 1) as SupportLevel;
   }
 
@@ -667,11 +676,15 @@ function tutorActionInstructions(
       : gateStatus === "complete"
         ? "\nThe comprehension gate is complete — you may acknowledge their restatement and move on when ready."
         : "";
-  const verifierNote = stepVerifierVerdict
-    ? `\nA separate verifier already graded the student's ${phase === "answer_check" ? "final answer" : "step answer"}. Do NOT contradict it or reveal the final answer.
+  const gradedThing = phase === "answer_check" ? "final answer" : "step answer";
+  const verifierNote = !stepVerifierVerdict
+    ? ""
+    : stepVerifierVerdict.studentStatus === "unknown"
+      ? `\nA separate verifier could NOT confirm the student's ${gradedThing}. Do NOT affirm it as correct and do NOT reveal the answer; ask them to explain their thinking or restate their answer so it can be checked.
+Verifier verdict: ${JSON.stringify(stepVerifierVerdict)}`
+      : `\nA separate verifier already graded the student's ${gradedThing}. Do NOT contradict it or reveal the final answer.
 Verifier verdict: ${JSON.stringify(stepVerifierVerdict)}
-Weave correctionHint into spokenUtterance when wrong; on correct answers, affirm briefly with a why.`
-    : "";
+Weave correctionHint into spokenUtterance when wrong; on correct answers, affirm briefly with a why.`;
   const retry = rejectionReasons.length
     ? `\n\nYour previous attempt was rejected for these reasons:\n- ${rejectionReasons.join("\n- ")}\nChoose a different move or rephrase so it passes.`
     : "";
