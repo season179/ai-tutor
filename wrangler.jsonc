@@ -45,6 +45,10 @@
       "migrations_dir": "migrations"
     }
   ],
+  "durable_objects": {
+    "bindings": [{ "name": "SESSION_RUNTIME", "class_name": "SessionRuntimeDO" }]
+  },
+  "migrations": [{ "tag": "v1-session-runtime", "new_classes": ["SessionRuntimeDO"] }],
   "secrets": {
     "required": [
       "OPENAI_API_KEY",

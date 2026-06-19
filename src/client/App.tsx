@@ -98,6 +98,7 @@ export function App() {
   const liveSession = useLiveSession({
     activeSessionId: tutorSessions.activeSessionId,
     eventCount: tutorSessions.eventCount,
+    isRunning,
     ready: sessionReady,
     turnSessionState
   });
@@ -191,7 +192,7 @@ export function App() {
         <PhaseRail stations={railStations(liveSession.currentPhase, liveSession.gateStatus)} />
 
         <SessionStream
-          gateStatus={liveSession.gateStatus}
+          goalStatus={liveSession.goalStatus}
           problemPin={
             <ProblemContextPanel
               confirmDisabled={
@@ -254,6 +255,8 @@ export function App() {
           onStart={handleStart}
           onStartAudioTurn={startAudioTurn}
           onStop={stopSession}
+          outputLanguageLabel={liveSession.outputLanguageLabel}
+          pendingHint={liveSession.pendingHint}
           scaffoldAid={liveSession.scaffoldAid}
           sessionReady={sessionReady}
         />

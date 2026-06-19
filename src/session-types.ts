@@ -54,9 +54,17 @@ export type SessionEventRecord = {
 export const studentTurnEventMessage = "Student turn";
 export const tutorTurnEventMessage = "Tutor turn";
 
+export type SessionReflectionRecord = {
+  createdAt: string;
+  reflectionText: string;
+  sessionId: string;
+  updatedAt: string;
+};
+
 export type TutorSessionDetail = {
   events: SessionEventRecord[];
   problemContext: ProblemContextRecord | null;
+  reflection: SessionReflectionRecord | null;
   session: TutorSessionRecord;
 };
 

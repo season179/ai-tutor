@@ -177,6 +177,8 @@ test("parseVoicePipelineTurnResponse round-trips tutor turn output", () => {
       currentPhase: "plan_first_step",
       focusAsk: "Give each friend 1 sticker first. How many stickers is that?",
       gateStatus: "complete",
+      goalStatus: "framed",
+      outputLanguageLabel: null,
       scaffoldAid: "4 friends · 1 sticker each",
       studentStatus: "unknown",
       supportLevel: 0,

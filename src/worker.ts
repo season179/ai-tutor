@@ -1,7 +1,10 @@
 import { createAuth, authPathPrefix, type AuthEnv } from "./auth.js";
 import { createApiHandlerEnv, handleApiRequest } from "./api-handler.js";
 import { D1SessionStore } from "./d1-session-store.js";
+import { SessionRuntimeDO } from "./session-runtime/session-runtime-do.js";
 import { voiceSessionPath, voiceTurnPath } from "./voice-types.js";
+
+export { SessionRuntimeDO };
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -24,6 +27,7 @@ export default {
 
     const apiResponse = await handleApiRequest(request, createApiHandlerEnv(env), {
       auth,
+      sessionRuntime: env.SESSION_RUNTIME,
       store
     });
 

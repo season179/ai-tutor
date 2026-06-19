@@ -17,6 +17,8 @@ type CenterAnchorProps = {
   onStart: () => void;
   onStartAudioTurn: () => void;
   onStop: () => void;
+  outputLanguageLabel: string | null;
+  pendingHint: string | null;
   scaffoldAid: string | null;
   sessionReady: boolean;
 };
@@ -39,17 +41,32 @@ export function CenterAnchor({
   onStart,
   onStartAudioTurn,
   onStop,
+  outputLanguageLabel,
+  pendingHint,
   scaffoldAid,
   sessionReady
 }: CenterAnchorProps) {
   const inStepLoop = currentPhase === "step_loop";
+  const inAnswerCheck = currentPhase === "answer_check";
+  const inWrap = currentPhase === "wrap_up" || currentPhase === "memory_write";
 
   return (
     <div className="cc-anchor">
       <div className="focus-card">
-        <div className="focus-kicker">{inStepLoop && focusAsk ? "One step" : "Your turn"}</div>
-        <div className="ask">{resolveAsk(focusAsk, isRunning, isRecording)}</div>
-        {scaffoldAid && inStepLoop ? (
+        <div className="focus-kicker">
+          {kickerLabel(currentPhase, Boolean(focusAsk))}
+          {outputLanguageLabel && inAnswerCheck ? (
+            <span className="lang-chip">{outputLanguageLabel}</span>
+          ) : null}
+        </div>
+        <div className="ask">{resolveAsk(focusAsk, inWrap, isRunning, isRecording)}</div>
+        {pendingHint && inStepLoop ? (
+          <div className="aid aid--hint">
+            <HintBulb />
+            {pendingHint}
+          </div>
+        ) : null}
+        {scaffoldAid && inStepLoop && !pendingHint ? (
           <div className="aid">
             <AidDots />
             {scaffoldAid}
@@ -75,9 +92,38 @@ export function CenterAnchor({
   );
 }
 
-function resolveAsk(focusAsk: string | null, isRunning: boolean, isRecording: boolean): string {
+function kickerLabel(phase: SessionPhase, hasFocusAsk: boolean): string {
+  if (phase === "wrap_up") {
+    return "You did it";
+  }
+
+  if (phase === "memory_write") {
+    return "Quick reflection";
+  }
+
+  if (phase === "answer_check") {
+    return "Say the answer";
+  }
+
+  if ((phase === "step_loop" || phase === "plan_first_step") && hasFocusAsk) {
+    return "One step";
+  }
+
+  return "Your turn";
+}
+
+function resolveAsk(
+  focusAsk: string | null,
+  inWrap: boolean,
+  isRunning: boolean,
+  isRecording: boolean
+): string {
   if (focusAsk?.trim()) {
     return focusAsk;
+  }
+
+  if (inWrap) {
+    return "Take a breath — you worked that all the way through.";
   }
 
   if (!isRunning) {
@@ -105,6 +151,23 @@ function AidDots() {
       <circle cx="5" cy="12" r="2" />
       <circle cx="12" cy="12" r="2" />
       <circle cx="19" cy="12" r="2" />
+    </svg>
+  );
+}
+
+function HintBulb() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 3a6 6 0 0 0-4 10c.8.7 1 1.2 1 2v1h6v-1c0-.8.2-1.3 1-2a6 6 0 0 0-4-10z" />
+      <path d="M9 21h6" />
     </svg>
   );
 }

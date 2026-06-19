@@ -3,6 +3,7 @@ import type {
   CreateTutorSessionRequest,
   SessionEventRecord,
   SessionImageMeta,
+  SessionReflectionRecord,
   TutorSessionDetail,
   TutorSessionRecord,
   TutorSessionStatus,
@@ -14,7 +15,7 @@ import type { ExtractionOutcome } from "./problem-context/problem-context-types.
 import { problemTypes, type ProblemContextRecord, type ProblemFrame, type ProblemQuantity, type ProblemType } from "./problem-context/problem-frame.js";
 import { isJsonObject } from "./schema-parser.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import { initialPhase } from "./phase-policy.js";
 import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
@@ -22,6 +23,8 @@ import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tuto
 type StoredSession = TutorSessionRecord & {
   events: SessionEventRecord[];
 };
+
+type StoredReflection = SessionReflectionRecord;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -268,6 +271,7 @@ function createSessionEventRecord(
 export class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
   private readonly problemContexts = new Map<string, ProblemContextRecord>();
+  private readonly reflections = new Map<string, StoredReflection>();
   private nextEventId = 1;
 
   async advanceSessionPhase(
@@ -334,6 +338,7 @@ export class MemorySessionStore implements SessionStore {
     return {
       events: [...session.events],
       problemContext: this.problemContexts.get(sessionId) ?? null,
+      reflection: this.reflections.get(sessionId) ?? null,
       session: this.toRecord(session)
     };
   }
@@ -360,6 +365,24 @@ export class MemorySessionStore implements SessionStore {
     record.updatedAt = timestamp;
 
     this.problemContexts.set(request.sessionId, record);
+    return record;
+  }
+
+  async saveReflection(
+    ownerKey: string,
+    request: SaveReflectionRequest
+  ): Promise<SessionReflectionRecord> {
+    this.requireOwnedSession(ownerKey, request.sessionId);
+    const timestamp = nowIso();
+    const existing = this.reflections.get(request.sessionId);
+    const record: SessionReflectionRecord = {
+      createdAt: existing?.createdAt ?? timestamp,
+      reflectionText: request.reflectionText.trim(),
+      sessionId: request.sessionId,
+      updatedAt: timestamp
+    };
+
+    this.reflections.set(request.sessionId, record);
     return record;
   }
 

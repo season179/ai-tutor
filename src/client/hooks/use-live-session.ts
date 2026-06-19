@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 
+import {
+  goalStatusFromDetail,
+  outputLanguageLabelFromContext,
+  pendingHintFromEvents
+} from "../../live-session-projection.js";
 import { sessionPhases, type ComprehensionGateStatus, type SessionPhase, type SupportLevel } from "../../tutor-action.js";
 import type { VoicePipelineSessionState } from "../../voice-types.js";
 import { getSession } from "../lib/session-api.js";
@@ -10,6 +15,7 @@ const initialPhase: SessionPhase = sessionPhases[0];
 type UseLiveSessionOptions = {
   activeSessionId: string | undefined;
   eventCount: number;
+  isRunning?: boolean;
   ready: boolean;
   turnSessionState?: VoicePipelineSessionState | null;
 };
@@ -26,6 +32,9 @@ type LiveSessionView = {
   currentPhase: SessionPhase;
   focusAsk: string | null;
   gateStatus: ComprehensionGateStatus | null;
+  goalStatus: VoicePipelineSessionState["goalStatus"];
+  outputLanguageLabel: string | null;
+  pendingHint: string | null;
   scaffoldAid: string | null;
   supportLevel: SupportLevel;
   turns: TranscriptTurn[];
@@ -36,6 +45,9 @@ const emptyView: LiveSessionView = {
   currentPhase: initialPhase,
   focusAsk: null,
   gateStatus: null,
+  goalStatus: "empty",
+  outputLanguageLabel: null,
+  pendingHint: null,
   scaffoldAid: null,
   supportLevel: 0,
   turns: [],
@@ -45,14 +57,31 @@ const emptyView: LiveSessionView = {
 export function useLiveSession({
   activeSessionId,
   eventCount,
+  isRunning = false,
   ready,
   turnSessionState = null
 }: UseLiveSessionOptions): LiveSessionView {
   const [view, setView] = useState<LiveSessionView>(emptyView);
+  const [idlePollTick, setIdlePollTick] = useState(0);
 
   useEffect(() => {
     setView(emptyView);
+    setIdlePollTick(0);
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!ready || !activeSessionId || !isRunning || view.currentPhase !== "step_loop") {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setIdlePollTick((tick) => tick + 1);
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeSessionId, isRunning, ready, view.currentPhase]);
 
   useEffect(() => {
     if (!ready || !activeSessionId) {
@@ -72,6 +101,14 @@ export function useLiveSession({
           currentPhase: detail.session.currentPhase,
           focusAsk: detail.session.activeStep?.ask ?? null,
           gateStatus: detail.session.gateStatus,
+          goalStatus: goalStatusFromDetail({
+            events: detail.events,
+            gateStatus: detail.session.gateStatus,
+            phase: detail.session.currentPhase,
+            reflectionPresent: Boolean(detail.reflection)
+          }),
+          outputLanguageLabel: outputLanguageLabelFromContext(detail.problemContext),
+          pendingHint: pendingHintFromEvents(detail.events),
           scaffoldAid: detail.session.activeStep?.scaffoldAid ?? null,
           supportLevel: detail.session.supportLevel,
           turns: toTranscriptTurns(detail.events),
@@ -85,7 +122,7 @@ export function useLiveSession({
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, eventCount, ready]);
+  }, [activeSessionId, eventCount, idlePollTick, ready]);
 
   useEffect(() => {
     if (!turnSessionState) {
@@ -97,6 +134,9 @@ export function useLiveSession({
       currentPhase: turnSessionState.currentPhase,
       focusAsk: turnSessionState.focusAsk,
       gateStatus: turnSessionState.gateStatus,
+      goalStatus: turnSessionState.goalStatus,
+      outputLanguageLabel: turnSessionState.outputLanguageLabel,
+      pendingHint: turnSessionState.currentPhase === "step_loop" ? null : current.pendingHint,
       scaffoldAid: turnSessionState.scaffoldAid,
       supportLevel: turnSessionState.supportLevel,
       unknownTarget: turnSessionState.unknownTarget

@@ -86,10 +86,49 @@ function parseTotalQuantity(frame: ProblemFrame): number | null {
   return null;
 }
 
+/** Equal-sharing quotient (e.g. 24 stickers ÷ 4 friends → 6). */
+export function deriveSharingQuotient(frame: ProblemFrame): number | null {
+  const friendCount = parseFriendCount(frame);
+  const total = parseTotalQuantity(frame);
+
+  if (!friendCount || !total || total % friendCount !== 0) {
+    return null;
+  }
+
+  return total / friendCount;
+}
+
 /**
- * Derives the canonical first checkable step for equal-sharing word problems.
- * Returns null when the frame does not expose a friend/group count to verify.
+ * Derives the framed-goal answer check for equal-sharing word problems.
  */
+export function deriveFinalAnswerCheck(frame: ProblemFrame): ActiveStep | null {
+  const quotient = deriveSharingQuotient(frame);
+  const friendCount = parseFriendCount(frame);
+  const total = parseTotalQuantity(frame);
+
+  if (!quotient || !friendCount || !total) {
+    return null;
+  }
+
+  const malay = requiresMalayPrompt(frame);
+  const distractorNudges: Record<string, string> = {
+    [String(total)]: "That's the total — we need how many each friend gets."
+  };
+
+  return {
+    ask: malay ? "Setiap kawan dapat berapa pelekat?" : "How many stickers does each friend get?",
+    defaultWrongNudge: "Not quite — how many does each friend get after sharing equally?",
+    distractorNudges,
+    expectedAnswers: [quotient],
+    scaffoldAid: `${total} ÷ ${friendCount}`
+  };
+}
+
+function requiresMalayPrompt(frame: ProblemFrame): boolean {
+  const language = frame.taskLanguage?.toLowerCase() ?? "en";
+  return frame.languageIsSubject || language.startsWith("ms");
+}
+
 export function deriveFirstCheckableStep(frame: ProblemFrame): ActiveStep | null {
   const friendCount = parseFriendCount(frame);
   if (!friendCount) {

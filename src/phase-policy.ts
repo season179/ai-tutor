@@ -58,7 +58,7 @@ const phaseGraph: Record<SessionPhase, readonly SessionPhase[]> = {
   plan_first_step: ["step_loop"],
   step_loop: ["answer_check"],
   answer_check: ["memory_write", "step_loop"],
-  memory_write: ["transfer_check"],
+  memory_write: ["wrap_up", "transfer_check"],
   transfer_check: [],
   wrap_up: []
 };

@@ -15,10 +15,12 @@ import {
 import type { SessionStore } from "./session-store.js";
 import { handleSessionsRequest, readJsonBody } from "./session-handler.js";
 import { sessionsPath } from "./session-types.js";
+import type { ProcessTurnPayload, SessionRuntimeDO } from "./session-runtime/session-runtime-do.js";
 import { createVoiceSessionWithStore } from "./voice-session-handler.js";
 import { handleVoicePipelineTurnWithStore } from "./voice-pipeline-service.js";
+import { parseVoicePipelineTurnRequest } from "./voice-session-schema.js";
 import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
-import { maxVoiceTurnBodyBytes, voiceSessionPath, voiceTurnPath } from "./voice-types.js";
+import { maxVoiceTurnBodyBytes, voiceSessionPath, voiceTurnPath, type VoicePipelineTurnResponse } from "./voice-types.js";
 import { buildOwnerKey, type AuthIdentity, type RequestContext } from "./request-context.js";
 
 export type ApiHandlerEnv = VoiceSessionServiceEnv & ProblemContextHandlerEnv;
@@ -27,6 +29,7 @@ export type ApiHandlerEnvSource = VoiceSessionServiceEnv & ProblemContextHandler
 
 export type ApiHandlerOptions = {
   auth: Auth;
+  sessionRuntime?: DurableObjectNamespace<SessionRuntimeDO> | undefined;
   store: SessionStore;
 };
 
@@ -124,12 +127,18 @@ export async function handleApiRequest(
         return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
       }
 
-      const response = await handleVoicePipelineTurnWithStore(
-        await readJsonBody(request, maxVoiceTurnBodyBytes),
-        env,
-        options.store,
-        context
-      );
+      const body = await readJsonBody(request, maxVoiceTurnBodyBytes);
+
+      if (options.sessionRuntime) {
+        const parsed = parseVoicePipelineTurnRequest(body);
+        const stub = options.sessionRuntime.getByName(parsed.sessionId) as DurableObjectStub & {
+          processTurn(payload: ProcessTurnPayload): Promise<VoicePipelineTurnResponse>;
+        };
+        const response = await stub.processTurn({ body, context });
+        return json(response, 200);
+      }
+
+      const response = await handleVoicePipelineTurnWithStore(body, env, options.store, context);
 
       return json(response, 200);
     }

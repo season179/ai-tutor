@@ -122,6 +122,8 @@ export const voicePipelineTurnResponseSchema = z.object({
     currentPhase: z.enum(sessionPhases),
     focusAsk: z.string().nullable(),
     gateStatus: z.enum(comprehensionGateStatuses).nullable(),
+    goalStatus: z.enum(["empty", "framed", "complete"]),
+    outputLanguageLabel: z.string().nullable(),
     scaffoldAid: z.string().nullable(),
     studentStatus: z.enum(["unknown", "correct", "partial", "stuck"]),
     supportLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),

@@ -8,10 +8,11 @@ import {
   type TutorSessionDetail,
   type TutorSessionRecord,
   type TutorSessionSummary,
-  type UpdateTutorSessionRequest
+  type UpdateTutorSessionRequest,
+  type SessionReflectionRecord
 } from "./session-types.js";
 import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
-import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
 import {
   createProblemContextRecord,
@@ -187,10 +188,12 @@ export class D1SessionStore implements SessionStore {
 
     const events = d1Rows(eventsResult).map(mapD1EventRow);
     const problemContext = await this.getProblemContext(ownerKey, sessionId);
+    const reflection = await this.getReflection(ownerKey, sessionId);
 
     return {
       events,
       problemContext,
+      reflection,
       session: mapD1SessionRow(sessionRow)
     };
   }
@@ -275,6 +278,43 @@ export class D1SessionStore implements SessionStore {
     return record;
   }
 
+  async saveReflection(
+    ownerKey: string,
+    request: SaveReflectionRequest
+  ): Promise<SessionReflectionRecord> {
+    const session = await this.getOwnedSessionRow(ownerKey, request.sessionId);
+    if (!session) {
+      throw sessionStoreNotFoundError();
+    }
+
+    const timestamp = nowIso();
+    const existing = await this.getReflection(ownerKey, request.sessionId);
+
+    await this.db
+      .prepare(
+        `INSERT INTO session_reflections (session_id, owner_key, reflection_text, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           reflection_text = excluded.reflection_text,
+           updated_at = excluded.updated_at`
+      )
+      .bind(
+        request.sessionId,
+        ownerKey,
+        request.reflectionText.trim(),
+        existing?.createdAt ?? timestamp,
+        timestamp
+      )
+      .run();
+
+    return {
+      createdAt: existing?.createdAt ?? timestamp,
+      reflectionText: request.reflectionText.trim(),
+      sessionId: request.sessionId,
+      updatedAt: timestamp
+    };
+  }
+
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
     const row = await this.getOwnedSessionRow(ownerKey, sessionId);
     return Boolean(row);
@@ -283,6 +323,11 @@ export class D1SessionStore implements SessionStore {
   async transferOwnerSessions(fromOwnerKey: string, toOwnerKey: string): Promise<number> {
     const result = await this.db
       .prepare("UPDATE tutor_sessions SET owner_key = ? WHERE owner_key = ?")
+      .bind(toOwnerKey, fromOwnerKey)
+      .run();
+
+    await this.db
+      .prepare("UPDATE session_reflections SET owner_key = ? WHERE owner_key = ?")
       .bind(toOwnerKey, fromOwnerKey)
       .run();
 
@@ -346,5 +391,30 @@ export class D1SessionStore implements SessionStore {
       .first();
 
     return row ? (row as Record<string, unknown>) : null;
+  }
+
+  private async getReflection(
+    ownerKey: string,
+    sessionId: string
+  ): Promise<SessionReflectionRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT session_id, reflection_text, created_at, updated_at
+         FROM session_reflections
+         WHERE session_id = ? AND owner_key = ?`
+      )
+      .bind(sessionId, ownerKey)
+      .first();
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      createdAt: String(row.created_at),
+      reflectionText: String(row.reflection_text),
+      sessionId: String(row.session_id),
+      updatedAt: String(row.updated_at)
+    };
   }
 }

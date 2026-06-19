@@ -1203,6 +1203,12 @@ pre {
   color: var(--ink);
 }
 
+.target-chip--complete {
+  background: oklch(0.94 0.04 150);
+  border: 1.5px solid oklch(0.45 0.12 150 / 0.45);
+  color: oklch(0.34 0.1 150);
+}
+
 .target-chip .star {
   color: currentColor;
   flex: 0 0 auto;
@@ -1296,12 +1302,25 @@ pre {
   align-items: center;
   color: var(--primary);
   display: flex;
+  flex-wrap: wrap;
   font-size: 0.72rem;
   font-weight: 760;
   gap: 0.5rem;
   letter-spacing: 0.06em;
   margin-bottom: 0.5rem;
   text-transform: uppercase;
+}
+
+.lang-chip {
+  background: var(--surface-rest);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 0.15rem 0.45rem;
+  text-transform: none;
 }
 
 .ask {
@@ -1366,6 +1385,11 @@ pre {
   color: var(--primary);
   flex: 0 0 auto;
   inline-size: 0.95rem;
+}
+
+.aid--hint {
+  border-style: solid;
+  color: var(--ink);
 }
 
 .voice-bar {

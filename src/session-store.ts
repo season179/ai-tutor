@@ -2,6 +2,7 @@ import type {
   AppendSessionEventRequest,
   CreateTutorSessionRequest,
   SessionEventRecord,
+  SessionReflectionRecord,
   TutorSessionDetail,
   TutorSessionRecord,
   TutorSessionSummary,
@@ -29,6 +30,11 @@ export type SessionPhaseAdvance = {
   supportLevel: SupportLevel;
 };
 
+export type SaveReflectionRequest = {
+  reflectionText: string;
+  sessionId: string;
+};
+
 export type SessionStore = {
   /**
    * Advance the authoritative phase state, guarded by an optimistic lock on the
@@ -47,6 +53,7 @@ export type SessionStore = {
   getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null>;
   listSessions(ownerKey: string): Promise<TutorSessionSummary[]>;
   saveProblemContext(ownerKey: string, request: SaveProblemContextRequest): Promise<ProblemContextRecord>;
+  saveReflection(ownerKey: string, request: SaveReflectionRequest): Promise<SessionReflectionRecord>;
   sessionExists(ownerKey: string, sessionId: string): Promise<boolean>;
   transferOwnerSessions(fromOwnerKey: string, toOwnerKey: string): Promise<number>;
   updateSession(

@@ -30,3 +30,8 @@ export { extractQuestionFromImageUrl } from "./problem-context/question-extracti
 export { maxVoiceTurnBodyBytes, voiceTurnPath } from "./voice-types.js";
 export type { JsonValue } from "./http-error.js";
 export { HttpError } from "./http-error.js";
+export {
+  goalStatusFromDetail,
+  outputLanguageLabelFromContext,
+  pendingHintFromEvents
+} from "./live-session-projection.js";

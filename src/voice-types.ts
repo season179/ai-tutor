@@ -116,10 +116,14 @@ export type VoicePipelineAudioOutput = {
   size: number;
 };
 
+export type GoalChipStatus = "empty" | "framed" | "complete";
+
 export type VoicePipelineSessionState = {
   currentPhase: SessionPhase;
   focusAsk: string | null;
   gateStatus: ComprehensionGateStatus | null;
+  goalStatus: GoalChipStatus;
+  outputLanguageLabel: string | null;
   scaffoldAid: string | null;
   studentStatus: StudentStatus;
   supportLevel: SupportLevel;

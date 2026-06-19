@@ -1,5 +1,6 @@
 import { HttpError, type JsonValue } from "./http-error.js";
-import { deriveFirstCheckableStep, type ActiveStep } from "./active-step.js";
+import { outputLanguageLabel, verifyAnswerCheck } from "./answer-checker.js";
+import { deriveFinalAnswerCheck, deriveFirstCheckableStep, type ActiveStep } from "./active-step.js";
 import { checkGateRestatement } from "./gate-checker.js";
 import { allowedMoves, allowedNextPhases, canTransition, forbiddenMoves } from "./phase-policy.js";
 import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
@@ -125,19 +126,17 @@ export async function handleVoicePipelineTurnWithStore(
 
   let activeStep = detail.session.activeStep;
   if (!activeStep && shouldSeedActiveStep(fromPhase, gateStatus, problemContext)) {
-    activeStep = deriveFirstCheckableStep(problemContext!);
+    activeStep = seedActiveStepForPhase(fromPhase, problemContext!);
   }
 
-  let stepVerifierVerdict: StepVerifierVerdict | null = null;
+  let checkerVerdict: StepVerifierVerdict | null = null;
   if (activeStep && shouldRunStepVerifier(fromPhase, gateStatus, studentText)) {
-    stepVerifierVerdict = verifyActiveStep(activeStep, studentText);
+    checkerVerdict = verifyActiveStep(activeStep, studentText);
+  } else if (activeStep && shouldRunAnswerChecker(fromPhase, gateStatus, studentText)) {
+    checkerVerdict = verifyAnswerCheck(activeStep, problemContext!, studentText);
   }
 
-  const supportLevel = nextSupportLevel(
-    detail.session.supportLevel,
-    stepVerifierVerdict,
-    studentText
-  );
+  const supportLevel = nextSupportLevel(detail.session.supportLevel, checkerVerdict, studentText);
 
   const action = await proposeTutorAction(
     {
@@ -146,7 +145,7 @@ export async function handleVoicePipelineTurnWithStore(
       gateStatus,
       image: request.image ?? null,
       problemContext,
-      stepVerifierVerdict,
+      stepVerifierVerdict: checkerVerdict,
       studentText,
       supportLevel
     },
@@ -154,14 +153,25 @@ export async function handleVoicePipelineTurnWithStore(
   );
 
   const audio = await createTutorSpeech(action.spokenUtterance, options);
-  const publicLesson = projectToPublicLesson(action, stepVerifierVerdict);
-  const toPhase = nextPhaseFor(fromPhase, action, gateStatus);
+  const publicLesson = projectToPublicLesson(action, checkerVerdict);
+  let toPhase = nextPhaseFor(fromPhase, action, gateStatus);
+  ({ activeStep, toPhase } = applyServerPhaseOverrides({
+    activeStep,
+    checkerVerdict,
+    fromPhase,
+    gateStatus,
+    problemContext,
+    studentText,
+    toPhase
+  }));
+
   const sessionState = buildSessionState({
     activeStep,
+    checkerVerdict,
+    fromPhase,
     gateStatus,
     phase: toPhase,
     problemContext,
-    stepVerifierVerdict,
     supportLevel
   });
   const response = serializeVoicePipelineTurnResponse({
@@ -206,18 +216,24 @@ export async function handleVoicePipelineTurnWithStore(
       }
     });
   }
-  if (stepVerifierVerdict) {
+  if (checkerVerdict) {
     await store.appendEvent(requestContext.ownerKey, request.sessionId, {
-      message: "Step verify",
+      message: fromPhase === "answer_check" ? "Answer check" : "Step verify",
       value: {
-        chip: stepVerifierVerdict.chip,
-        chipLabel: stepVerifierVerdict.chipLabel,
-        correctionHint: stepVerifierVerdict.correctionHint,
-        method: stepVerifierVerdict.method,
-        studentAnswer: stepVerifierVerdict.studentAnswer,
-        studentStatus: stepVerifierVerdict.studentStatus,
+        chip: checkerVerdict.chip,
+        chipLabel: checkerVerdict.chipLabel,
+        correctionHint: checkerVerdict.correctionHint,
+        method: checkerVerdict.method,
+        studentAnswer: checkerVerdict.studentAnswer,
+        studentStatus: checkerVerdict.studentStatus,
         studentText
       }
+    });
+  }
+  if (fromPhase === "memory_write" && studentText.trim()) {
+    await store.saveReflection(requestContext.ownerKey, {
+      reflectionText: studentText,
+      sessionId: request.sessionId
     });
   }
   await store.appendEvent(requestContext.ownerKey, request.sessionId, {
@@ -229,11 +245,11 @@ export async function handleVoicePipelineTurnWithStore(
       nextPhase: toPhase,
       text: action.spokenUtterance,
       verdict:
-        stepVerifierVerdict === null
+        checkerVerdict === null
           ? null
           : {
-              chip: stepVerifierVerdict.chip,
-              label: stepVerifierVerdict.chipLabel
+              chip: checkerVerdict.chip,
+              label: checkerVerdict.chipLabel
             }
     }
   });
@@ -247,10 +263,64 @@ function shouldSeedActiveStep(
   problemContext: ProblemContextRecord | null
 ): problemContext is ProblemContextRecord {
   return (
-    (phase === "plan_first_step" || phase === "step_loop") &&
+    (phase === "plan_first_step" || phase === "step_loop" || phase === "answer_check") &&
     gateStatus === "complete" &&
     Boolean(problemContext)
   );
+}
+
+function seedActiveStepForPhase(phase: SessionPhase, frame: ProblemContextRecord): ActiveStep | null {
+  if (phase === "answer_check") {
+    return deriveFinalAnswerCheck(frame);
+  }
+
+  return deriveFirstCheckableStep(frame);
+}
+
+function shouldRunAnswerChecker(
+  phase: SessionPhase,
+  gateStatus: ComprehensionGateStatus | null,
+  studentText: string
+): boolean {
+  return phase === "answer_check" && gateStatus === "complete" && shouldVerifyActiveStep(studentText);
+}
+
+function applyServerPhaseOverrides(input: {
+  activeStep: ActiveStep | null;
+  checkerVerdict: StepVerifierVerdict | null;
+  fromPhase: SessionPhase;
+  gateStatus: ComprehensionGateStatus | null;
+  problemContext: ProblemContextRecord | null;
+  studentText: string;
+  toPhase: SessionPhase;
+}): { activeStep: ActiveStep | null; toPhase: SessionPhase } {
+  let { activeStep, toPhase } = input;
+
+  if (
+    input.fromPhase === "step_loop" &&
+    input.checkerVerdict?.studentStatus === "correct" &&
+    input.problemContext &&
+    canTransition("step_loop", "answer_check", input.gateStatus)
+  ) {
+    activeStep = deriveFinalAnswerCheck(input.problemContext);
+    toPhase = "answer_check";
+  }
+
+  if (
+    input.fromPhase === "answer_check" &&
+    input.checkerVerdict?.studentStatus === "correct" &&
+    canTransition("answer_check", "memory_write", input.gateStatus)
+  ) {
+    activeStep = null;
+    toPhase = "memory_write";
+  }
+
+  if (input.fromPhase === "memory_write" && input.studentText.trim() && canTransition("memory_write", "wrap_up")) {
+    activeStep = null;
+    toPhase = "wrap_up";
+  }
+
+  return { activeStep, toPhase };
 }
 
 function shouldRunStepVerifier(
@@ -283,21 +353,52 @@ function nextSupportLevel(
 
 function buildSessionState(input: {
   activeStep: ActiveStep | null;
+  checkerVerdict: StepVerifierVerdict | null;
+  fromPhase: SessionPhase;
   gateStatus: ComprehensionGateStatus | null;
   phase: SessionPhase;
   problemContext: ProblemContextRecord | null;
-  stepVerifierVerdict: StepVerifierVerdict | null;
   supportLevel: SupportLevel;
 }): VoicePipelineSessionState {
+  const focusAsk =
+    input.phase === "memory_write"
+      ? "What helped you figure it out?"
+      : input.phase === "wrap_up"
+        ? "Nice work — you finished this problem!"
+        : (input.activeStep?.ask ?? null);
+
   return {
     currentPhase: input.phase,
-    focusAsk: input.activeStep?.ask ?? null,
+    focusAsk,
     gateStatus: input.gateStatus,
+    goalStatus: goalStatusFor(input),
+    outputLanguageLabel: input.problemContext ? outputLanguageLabel(input.problemContext) : null,
     scaffoldAid: input.activeStep?.scaffoldAid ?? null,
-    studentStatus: mapStudentStatusToLegacy(input.stepVerifierVerdict?.studentStatus ?? "unknown"),
+    studentStatus: mapStudentStatusToLegacy(input.checkerVerdict?.studentStatus ?? "unknown"),
     supportLevel: input.supportLevel,
     unknownTarget: input.problemContext?.unknownTarget ?? null
   };
+}
+
+function goalStatusFor(input: {
+  checkerVerdict: StepVerifierVerdict | null;
+  fromPhase: SessionPhase;
+  gateStatus: ComprehensionGateStatus | null;
+  phase: SessionPhase;
+}): VoicePipelineSessionState["goalStatus"] {
+  if (input.gateStatus !== "complete") {
+    return "empty";
+  }
+
+  if (
+    input.phase === "memory_write" ||
+    input.phase === "wrap_up" ||
+    (input.fromPhase === "answer_check" && input.checkerVerdict?.studentStatus === "correct")
+  ) {
+    return "complete";
+  }
+
+  return "framed";
 }
 
 function mapStudentStatusToLegacy(status: StudentAssessmentStatus): StudentStatus {
@@ -560,7 +661,7 @@ function tutorActionInstructions(
         ? "\nThe comprehension gate is complete — you may acknowledge their restatement and move on when ready."
         : "";
   const verifierNote = stepVerifierVerdict
-    ? `\nA separate verifier already graded the student's step answer. Do NOT contradict it or reveal the final answer.
+    ? `\nA separate verifier already graded the student's ${phase === "answer_check" ? "final answer" : "step answer"}. Do NOT contradict it or reveal the final answer.
 Verifier verdict: ${JSON.stringify(stepVerifierVerdict)}
 Weave correctionHint into spokenUtterance when wrong; on correct answers, affirm briefly with a why.`
     : "";

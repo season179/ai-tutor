@@ -53,6 +53,8 @@ function sessionState(
     currentPhase: "session_open",
     focusAsk: null,
     gateStatus: null,
+    goalStatus: "empty",
+    outputLanguageLabel: null,
     scaffoldAid: null,
     studentStatus: "unknown",
     supportLevel: 0,
@@ -464,6 +466,7 @@ test("advances past the gate only after the gate-checker accepts a valid restate
       sessionState({
         currentPhase: "plan_first_step",
         gateStatus: "complete",
+        goalStatus: "framed",
         unknownTarget: sharingFrame.unknownTarget
       })
     );
@@ -528,6 +531,7 @@ test("skips the gate-checker once the gate is already complete", async () => {
       sessionState({
         currentPhase: "plan_first_step",
         gateStatus: "complete",
+        goalStatus: "framed",
         unknownTarget: sharingFrame.unknownTarget
       })
     );
@@ -702,15 +706,160 @@ test("grades a correct numeric step and decrements support when the child explai
     assert.deepEqual(
       response.session,
       sessionState({
-        currentPhase: "step_loop",
-        focusAsk: "Give each friend 1 sticker first. How many stickers is that?",
+        currentPhase: "answer_check",
+        focusAsk: "How many stickers does each friend get?",
         gateStatus: "complete",
-        scaffoldAid: "4 friends · 1 sticker each",
+        goalStatus: "framed",
+        scaffoldAid: "24 ÷ 4",
         studentStatus: "correct",
         supportLevel: 0,
         unknownTarget: sharingFrame.unknownTarget
       })
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+async function seedAnswerCheckSession(store: MemorySessionStore, sessionId: string): Promise<void> {
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId
+  });
+  await store.advanceSessionPhase(ownerKey, sessionId, "session_open", {
+    activeStep: {
+      ask: "How many stickers does each friend get?",
+      defaultWrongNudge: "Not quite — how many does each friend get after sharing equally?",
+      distractorNudges: { "24": "That's the total — we need how many each friend gets." },
+      expectedAnswers: [6],
+      scaffoldAid: "24 ÷ 4"
+    },
+    currentPhase: "answer_check",
+    gateStatus: "complete",
+    supportLevel: 0
+  });
+}
+
+test("grades the final answer and advances to memory_write", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Answer check" });
+  await seedAnswerCheckSession(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  const affirm = {
+    move: "feedback_with_why",
+    nextPhase: "answer_check",
+    spokenUtterance: "Yes — six stickers each!"
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      return Response.json({ output_text: JSON.stringify(affirm) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "6 stickers each" },
+      env,
+      store,
+      context
+    );
+
+    assert.equal(response.lesson.studentStatus, "correct");
+    assert.deepEqual(
+      response.session,
+      sessionState({
+        currentPhase: "memory_write",
+        focusAsk: "What helped you figure it out?",
+        gateStatus: "complete",
+        goalStatus: "complete",
+        studentStatus: "correct",
+        supportLevel: 0,
+        unknownTarget: sharingFrame.unknownTarget
+      })
+    );
+
+    const detail = await store.getSession(ownerKey, session.id);
+    assert.equal(detail?.session.currentPhase, "memory_write");
+    const checkEvent = detail?.events.find((event) => event.message === "Answer check");
+    assert.ok(checkEvent);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("persists reflection and advances to wrap_up", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Reflection" });
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId: session.id
+  });
+  await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
+    activeStep: null,
+    currentPhase: "memory_write",
+    gateStatus: "complete",
+    supportLevel: 0
+  });
+
+  const originalFetch = globalThis.fetch;
+  const reflect = {
+    move: "elicit",
+    nextPhase: "memory_write",
+    spokenUtterance: "Nice — drawing it out really helped."
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      return Response.json({ output_text: JSON.stringify(reflect) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "Drawing one for each friend helped me see it." },
+      env,
+      store,
+      context
+    );
+
+    assert.deepEqual(
+      response.session,
+      sessionState({
+        currentPhase: "wrap_up",
+        focusAsk: "Nice work — you finished this problem!",
+        gateStatus: "complete",
+        goalStatus: "complete",
+        unknownTarget: sharingFrame.unknownTarget
+      })
+    );
+
+    const detail = await store.getSession(ownerKey, session.id);
+    assert.equal(detail?.reflection?.reflectionText, "Drawing one for each friend helped me see it.");
+    assert.equal(detail?.session.currentPhase, "wrap_up");
   } finally {
     globalThis.fetch = originalFetch;
   }

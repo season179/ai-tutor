@@ -124,6 +124,14 @@ const problemContextRecordSchema = z.object({
 export const tutorSessionDetailSchema = z.object({
   events: z.array(sessionEventRecordSchema),
   problemContext: problemContextRecordSchema.nullable(),
+  reflection: z
+    .object({
+      createdAt: z.string(),
+      reflectionText: z.string(),
+      sessionId: z.string(),
+      updatedAt: z.string()
+    })
+    .nullable(),
   session: tutorSessionRecordSchema
 }) satisfies z.ZodType<TutorSessionDetail>;
 
