@@ -7,7 +7,7 @@
  * See `docs/tutoring-workflow.md` ("The phase model") and `docs/build-plan.md`.
  */
 
-import type { GateForbiddenMove, SessionPhase, TutorMove } from "./tutor-action.js";
+import { sessionPhases, type ComprehensionGateStatus, type GateForbiddenMove, type SessionPhase, type TutorMove } from "./tutor-action.js";
 
 // Moves allowed in every phase — safety overrides and de-escalation are never gated.
 const universalMoves: readonly TutorMove[] = ["reset", "safety_boundary", "escalate"];
@@ -63,7 +63,15 @@ const phaseGraph: Record<SessionPhase, readonly SessionPhase[]> = {
   wrap_up: []
 };
 
-export function canTransition(from: SessionPhase, to: SessionPhase): boolean {
+export function isGateComplete(gateStatus: ComprehensionGateStatus | null | undefined): boolean {
+  return gateStatus === "complete";
+}
+
+export function canTransition(
+  from: SessionPhase,
+  to: SessionPhase,
+  gateStatus?: ComprehensionGateStatus | null
+): boolean {
   if (from === to) {
     return true;
   }
@@ -72,7 +80,18 @@ export function canTransition(from: SessionPhase, to: SessionPhase): boolean {
     return true;
   }
 
+  if (from === "frame_task" && to !== from && !isGateComplete(gateStatus)) {
+    return false;
+  }
+
   return phaseGraph[from].some((next) => next === to);
+}
+
+export function allowedNextPhases(
+  from: SessionPhase,
+  gateStatus?: ComprehensionGateStatus | null
+): readonly SessionPhase[] {
+  return sessionPhases.filter((candidate) => canTransition(from, candidate, gateStatus));
 }
 
 export const initialPhase: SessionPhase = "session_open";

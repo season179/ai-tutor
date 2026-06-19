@@ -39,8 +39,11 @@ export type ExtractQuestionRequest = {
   sessionId: string;
 };
 
+import type { ProblemFrame } from "./problem-frame.js";
+
 export type ExtractQuestionResponse = {
   confidence: "high" | "low" | "medium";
+  frame: ProblemFrame;
   notes: string | null;
   outcome: ExtractionOutcome;
   question: string;

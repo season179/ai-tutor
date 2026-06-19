@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 
 import { classNames } from "../lib/class-names.js";
+import type { ComprehensionGateStatus } from "../../tutor-action.js";
 import type { TranscriptTurn } from "../lib/transcript.js";
 
 type SessionStreamProps = {
+  gateStatus: ComprehensionGateStatus | null;
   problemPin: ReactNode;
   turns: TranscriptTurn[];
+  unknownTarget: string | null;
 };
 
 /**
@@ -13,14 +16,20 @@ type SessionStreamProps = {
  * target chip, and the growing transcript. The target chip is intentionally
  * empty and inert until the comprehension gate (M3) decides what we're finding.
  */
-export function SessionStream({ problemPin, turns }: SessionStreamProps) {
+export function SessionStream({ gateStatus, problemPin, turns, unknownTarget }: SessionStreamProps) {
+  const framed = gateStatus === "complete" && Boolean(unknownTarget?.trim());
+
   return (
     <div className="cc-stream">
       {problemPin}
 
       <div className="target-row">
-        <span className="target-chip target-chip--empty">
-          <span className="tlabel">We need to find</span> ___
+        <span
+          className={classNames("target-chip", framed ? "target-chip--framed" : "target-chip--empty")}
+        >
+          {framed ? <TargetStar /> : null}
+          <span className="tlabel">{framed ? "Find:" : "We need to find"}</span>
+          {framed ? ` ${unknownTarget}` : " ___"}
         </span>
       </div>
 
@@ -53,5 +62,22 @@ function EchoMark() {
         <path d="M4 12h2l2-6 4 14 3-9 2 4h3" />
       </svg>
     </span>
+  );
+}
+
+function TargetStar() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="star"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z" />
+    </svg>
   );
 }

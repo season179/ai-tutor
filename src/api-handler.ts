@@ -34,6 +34,7 @@ export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv 
   return {
     ...createProblemContextHandlerEnv(source),
     OPENAI_API_KEY: source.OPENAI_API_KEY,
+    OPENAI_GATE_CHECKER_MODEL: source.OPENAI_GATE_CHECKER_MODEL,
     OPENAI_REALTIME_MODEL: source.OPENAI_REALTIME_MODEL,
     OPENAI_REALTIME_VOICE: source.OPENAI_REALTIME_VOICE,
     OPENAI_SAFETY_IDENTIFIER: source.OPENAI_SAFETY_IDENTIFIER,
@@ -160,7 +161,7 @@ export async function handleApiRequest(
         context
       );
 
-      return json(response, 200);
+      return json(JSON.parse(JSON.stringify(response)) as JsonValue, 200);
     }
 
     if (url.pathname === problemContextPreviewUrlPath) {

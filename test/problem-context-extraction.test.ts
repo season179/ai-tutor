@@ -74,9 +74,18 @@ test("legacyReadyExtractionAlert prompts review for hydrated legacy sessions", (
 test("normalizeExtractionResponse coerces empty questions to none", () => {
   const normalized = normalizeExtractionResponse({
     confidence: "high",
+    diagramDescription: null,
+    extractedText: "",
+    languageIsSubject: false,
+    likelySkillKeys: [],
     notes: null,
     outcome: "extracted",
-    question: ""
+    problemType: "other",
+    quantities: [],
+    question: "",
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: null
   });
 
   assert.equal(normalized.outcome, "none");
@@ -88,9 +97,18 @@ test("normalizeExtractionResponse coerces empty questions to none", () => {
 test("normalizeExtractionResponse downgrades very short extracted questions to partial", () => {
   const normalized = normalizeExtractionResponse({
     confidence: "high",
+    diagramDescription: null,
+    extractedText: "Solve x",
+    languageIsSubject: false,
+    likelySkillKeys: [],
     notes: null,
     outcome: "extracted",
-    question: "Solve x"
+    problemType: "equation",
+    quantities: [],
+    question: "Solve x",
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: "x"
   });
 
   assert.equal(normalized.outcome, "partial");

@@ -78,7 +78,8 @@ export function App() {
     startAudioTurn,
     startSession,
     status,
-    stopSession
+    stopSession,
+    turnSessionState
   } = useVoiceSession({
     audioRef,
     logEvent,
@@ -97,7 +98,8 @@ export function App() {
   const liveSession = useLiveSession({
     activeSessionId: tutorSessions.activeSessionId,
     eventCount: tutorSessions.eventCount,
-    ready: sessionReady
+    ready: sessionReady,
+    turnSessionState
   });
 
   const problemContextStep1 = useProblemContextStep1({
@@ -186,9 +188,10 @@ export function App() {
           <StatusBadge message={status.message} tone={status.tone} />
         </header>
 
-        <PhaseRail stations={railStations(liveSession.currentPhase)} />
+        <PhaseRail stations={railStations(liveSession.currentPhase, liveSession.gateStatus)} />
 
         <SessionStream
+          gateStatus={liveSession.gateStatus}
           problemPin={
             <ProblemContextPanel
               confirmDisabled={
@@ -228,6 +231,7 @@ export function App() {
             />
           }
           turns={liveSession.turns}
+          unknownTarget={liveSession.unknownTarget}
         />
 
         <CenterAnchor

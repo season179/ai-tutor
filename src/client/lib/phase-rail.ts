@@ -1,4 +1,5 @@
-import type { SessionPhase } from "../../tutor-action.js";
+import type { ComprehensionGateStatus, SessionPhase } from "../../tutor-action.js";
+import { isGateComplete } from "../../phase-policy.js";
 
 /**
  * The phase rail (the "Spine") collapses the canonical ten phases into the four
@@ -28,8 +29,15 @@ const stationGroupByPhase: Record<SessionPhase, number> = {
   wrap_up: 3
 };
 
-export function railStations(currentPhase: SessionPhase): RailStation[] {
-  const activeGroup = stationGroupByPhase[currentPhase];
+export function railStations(
+  currentPhase: SessionPhase,
+  gateStatus: ComprehensionGateStatus | null = null
+): RailStation[] {
+  let activeGroup = stationGroupByPhase[currentPhase];
+
+  if (currentPhase === "frame_task" && isGateComplete(gateStatus)) {
+    activeGroup = 2;
+  }
 
   return stationLabels.map((label, index) => ({
     label,

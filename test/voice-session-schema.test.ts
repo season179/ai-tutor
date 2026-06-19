@@ -173,6 +173,11 @@ test("parseVoicePipelineTurnResponse round-trips tutor turn output", () => {
       studentStatus: "unknown",
       tutorAction: "ask"
     },
+    session: {
+      currentPhase: "plan_first_step",
+      gateStatus: "complete",
+      unknownTarget: "how many stickers each friend gets"
+    },
     transcript: "I see the problem.",
     tutorText: "What is the first number the problem gives you?"
   };

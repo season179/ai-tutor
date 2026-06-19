@@ -11,6 +11,7 @@ import {
   type UploadUrlRequest,
   type UploadUrlResponse
 } from "./problem-context-types.js";
+import { problemTypes } from "./problem-frame.js";
 
 const allowedImageContentTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 
@@ -32,6 +33,26 @@ export const previewUrlRequestSchema = z.object({
 
 export const extractQuestionResponseSchema = z.object({
   confidence: z.enum(["high", "low", "medium"]),
+  frame: z.object({
+    diagramDescription: z.string().nullable(),
+    extractedText: z.string(),
+    languageIsSubject: z.boolean(),
+    likelySkillKeys: z.array(z.string()),
+    problemType: z.enum(problemTypes),
+    quantities: z.array(
+      z
+        .object({
+          label: z.string(),
+          raw: z.string(),
+          unit: z.string()
+        })
+        .partial({ unit: true })
+    ),
+    relationships: z.array(z.string()),
+    taskLanguage: z.string(),
+    unknownTarget: z.string().nullable(),
+    visibleQuestion: z.string()
+  }),
   notes: z.string().nullable(),
   outcome: z.enum(extractionOutcomes),
   question: z.string(),

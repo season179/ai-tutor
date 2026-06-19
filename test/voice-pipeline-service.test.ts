@@ -14,6 +14,7 @@ const context: RequestContext = {
 
 const env = {
   OPENAI_API_KEY: "test-key",
+  OPENAI_GATE_CHECKER_MODEL: undefined,
   OPENAI_TRANSCRIBE_MODEL: undefined,
   OPENAI_TTS_MODEL: undefined,
   OPENAI_TTS_VOICE: undefined,
@@ -28,6 +29,43 @@ const problemImage = {
   size: 112298,
   width: 1280
 };
+
+const sharingFrame = {
+  diagramDescription: null,
+  extractedText: "24 stickers are shared equally among 4 friends.",
+  languageIsSubject: false,
+  likelySkillKeys: [],
+  problemType: "word_problem" as const,
+  quantities: [{ label: "stickers", raw: "24" }],
+  relationships: ["shared equally among 4 friends"],
+  taskLanguage: "en",
+  unknownTarget: "how many stickers each friend gets",
+  visibleQuestion: "How many stickers does each friend get?"
+};
+
+function isGateCheckerRequest(init?: RequestInit): boolean {
+  if (!init?.body) {
+    return false;
+  }
+
+  const body = JSON.parse(String(init.body)) as { instructions?: string };
+  return body.instructions?.includes("comprehension-gate checker") ?? false;
+}
+
+async function seedGateSession(store: MemorySessionStore, sessionId: string): Promise<void> {
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId
+  });
+  await store.advanceSessionPhase(ownerKey, sessionId, "session_open", {
+    currentPhase: "frame_task",
+    gateStatus: "needs_restatement",
+    supportLevel: 0
+  });
+}
 
 test("projects a validated turn to the legacy public lesson shape and advances the phase", async () => {
   const store = new MemorySessionStore();
@@ -69,6 +107,11 @@ test("projects a validated turn to the legacy public lesson shape and advances t
       spokenUtterance: action.spokenUtterance,
       studentStatus: "unknown",
       tutorAction: "orient"
+    });
+    assert.deepEqual(response.session, {
+      currentPhase: "frame_task",
+      gateStatus: null,
+      unknownTarget: null
     });
     assert.equal("hiddenState" in response.lesson, false);
     assert.equal("safetyNotes" in response.lesson, false);
@@ -134,6 +177,11 @@ test("reads the tutor action from response output content", async () => {
       spokenUtterance: action.spokenUtterance,
       studentStatus: "unknown",
       tutorAction: "orient"
+    });
+    assert.deepEqual(response.session, {
+      currentPhase: "session_open",
+      gateStatus: null,
+      unknownTarget: null
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -201,21 +249,20 @@ test("transcribes recorder audio and runs the turn from the transcript", async (
 test("rejects a solving move during the comprehension gate before reaching TTS", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Gate test" });
-  const advanced = await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
-    currentPhase: "frame_task",
-    gateStatus: null,
-    supportLevel: 0
-  });
-  assert.ok(advanced);
+  await seedGateSession(store, session.id);
 
   const originalFetch = globalThis.fetch;
   let speechCalls = 0;
   const solve = { move: "solve", nextPhase: "frame_task", spokenUtterance: "It's 6 sweets each." };
 
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = String(input);
 
     if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init)) {
+        return Response.json({ output_text: JSON.stringify({ accepted: false, notes: "Not a restatement." }) });
+      }
+
       return Response.json({ output_text: JSON.stringify(solve) });
     }
 
@@ -241,6 +288,7 @@ test("rejects a solving move during the comprehension gate before reaching TTS",
     assert.equal(speechCalls, 0);
     const detail = await store.getSession(ownerKey, session.id);
     assert.equal(detail?.session.currentPhase, "frame_task");
+    assert.notEqual(detail?.session.gateStatus, "complete");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -249,27 +297,27 @@ test("rejects a solving move during the comprehension gate before reaching TTS",
 test("re-asks the generator when the first move is illegal, then accepts a legal one", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Retry test" });
-  await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
-    currentPhase: "frame_task",
-    gateStatus: null,
-    supportLevel: 0
-  });
+  await seedGateSession(store, session.id);
 
   const originalFetch = globalThis.fetch;
-  let responsesCalls = 0;
+  let tutorCalls = 0;
   const solve = { move: "solve", nextPhase: "frame_task", spokenUtterance: "It's 6 sweets each." };
   const restate = {
     move: "restate_prompt",
-    nextPhase: "plan_first_step",
+    nextPhase: "frame_task",
     spokenUtterance: "In your own words, what are we trying to find?"
   };
 
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = String(input);
 
     if (url === "https://api.openai.com/v1/responses") {
-      responsesCalls += 1;
-      return Response.json({ output_text: JSON.stringify(responsesCalls === 1 ? solve : restate) });
+      if (isGateCheckerRequest(init)) {
+        return Response.json({ output_text: JSON.stringify({ accepted: false, notes: "Keep going." }) });
+      }
+
+      tutorCalls += 1;
+      return Response.json({ output_text: JSON.stringify(tutorCalls === 1 ? solve : restate) });
     }
 
     if (url === "https://api.openai.com/v1/audio/speech") {
@@ -287,7 +335,7 @@ test("re-asks the generator when the first move is illegal, then accepts a legal
       context
     );
 
-    assert.equal(responsesCalls, 2);
+    assert.equal(tutorCalls, 2);
     assert.equal(response.tutorText, restate.spokenUtterance);
     assert.deepEqual(response.lesson, {
       phase: "orient",
@@ -295,9 +343,170 @@ test("re-asks the generator when the first move is illegal, then accepts a legal
       studentStatus: "unknown",
       tutorAction: "ask"
     });
+    assert.deepEqual(response.session, {
+      currentPhase: "frame_task",
+      gateStatus: "needs_restatement",
+      unknownTarget: sharingFrame.unknownTarget
+    });
+
+    const detail = await store.getSession(ownerKey, session.id);
+    assert.equal(detail?.session.currentPhase, "frame_task");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("does not advance past the gate until the gate-checker accepts a restatement", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Gate advance test" });
+  await seedGateSession(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  const plan = {
+    move: "restate_prompt",
+    nextPhase: "plan_first_step",
+    spokenUtterance: "Nice — ready for the first tiny step?"
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init)) {
+        return Response.json({ output_text: JSON.stringify({ accepted: false, notes: "Not yet." }) });
+      }
+
+      return Response.json({ output_text: JSON.stringify(plan) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "Just divide it." },
+      env,
+      store,
+      context
+    );
+
+    assert.deepEqual(response.session, {
+      currentPhase: "frame_task",
+      gateStatus: "needs_restatement",
+      unknownTarget: sharingFrame.unknownTarget
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("advances past the gate only after the gate-checker accepts a valid restatement", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Gate pass test" });
+  await seedGateSession(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  const plan = {
+    move: "restate_prompt",
+    nextPhase: "plan_first_step",
+    spokenUtterance: "Great restatement — what's our first tiny step?"
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init)) {
+        return Response.json({ output_text: JSON.stringify({ accepted: true, notes: null }) });
+      }
+
+      return Response.json({ output_text: JSON.stringify(plan) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "We need to find how many stickers each friend gets." },
+      env,
+      store,
+      context
+    );
+
+    assert.deepEqual(response.session, {
+      currentPhase: "plan_first_step",
+      gateStatus: "complete",
+      unknownTarget: sharingFrame.unknownTarget
+    });
 
     const detail = await store.getSession(ownerKey, session.id);
     assert.equal(detail?.session.currentPhase, "plan_first_step");
+    assert.equal(detail?.session.gateStatus, "complete");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("skips the gate-checker once the gate is already complete", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Gate complete test" });
+  await seedGateSession(store, session.id);
+  await store.advanceSessionPhase(ownerKey, session.id, "frame_task", {
+    currentPhase: "frame_task",
+    gateStatus: "complete",
+    supportLevel: 0
+  });
+
+  const originalFetch = globalThis.fetch;
+  let gateCheckerCalls = 0;
+  const plan = {
+    move: "restate_prompt",
+    nextPhase: "plan_first_step",
+    spokenUtterance: "Ready to plan the first step?"
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init)) {
+        gateCheckerCalls += 1;
+        return Response.json({ output_text: JSON.stringify({ accepted: false, notes: "Should not run." }) });
+      }
+
+      return Response.json({ output_text: JSON.stringify(plan) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "We need to find how many stickers each friend gets." },
+      env,
+      store,
+      context
+    );
+
+    assert.equal(gateCheckerCalls, 0);
+    assert.deepEqual(response.session, {
+      currentPhase: "plan_first_step",
+      gateStatus: "complete",
+      unknownTarget: sharingFrame.unknownTarget
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { mapD1SessionRow, MemorySessionStore } from "../dist/memory-session-store.js";
+import { updateSession } from "../dist/session-handler.js";
+import type { RequestContext } from "../src/request-context.ts";
+
+const ownerKey = "access:user-a";
+const context: RequestContext = {
+  identity: { userId: "user-a" },
+  ownerKey
+};
 
 test("MemorySessionStore scopes sessions by owner key", async () => {
   const store = new MemorySessionStore();
@@ -153,4 +161,26 @@ test("mapD1SessionRow normalizes optional image columns", () => {
   assert.equal(session.extractionOutcome, "partial");
   assert.equal(session.extractionNotes, "Bottom cut off.");
   assert.equal(session.promptConfirmed, true);
+});
+
+test("confirming a typed prompt seeds problem context and gate status", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Manual prompt" });
+
+  const updated = await updateSession(
+    session.id,
+    {
+      imagePrompt: "How many stickers does each friend get?",
+      promptConfirmed: true
+    },
+    context,
+    store
+  );
+
+  assert.equal(updated.promptConfirmed, true);
+  assert.equal(updated.gateStatus, "needs_restatement");
+
+  const detail = await store.getSession(ownerKey, session.id);
+  assert.equal(detail?.problemContext?.unknownTarget, "How many stickers does each friend get?");
+  assert.equal(detail?.problemContext?.visibleQuestion, "How many stickers does each friend get?");
 });

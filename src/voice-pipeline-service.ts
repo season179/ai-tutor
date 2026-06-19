@@ -1,5 +1,7 @@
 import { HttpError, type JsonValue } from "./http-error.js";
-import { allowedMoves, canTransition, forbiddenMoves } from "./phase-policy.js";
+import { checkGateRestatement } from "./gate-checker.js";
+import { allowedMoves, allowedNextPhases, canTransition, forbiddenMoves } from "./phase-policy.js";
+import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
 import type { RequestContext } from "./request-context.js";
 import type { SessionStore } from "./session-store.js";
 import {
@@ -14,7 +16,8 @@ import {
   tutorMoves,
   type ProposedMove,
   type ProposedTutorAction,
-  type SessionPhase
+  type SessionPhase,
+  type ComprehensionGateStatus
 } from "./tutor-action.js";
 import { validateTutorAction } from "./tutor-action-validator.js";
 import { tutorPolicy } from "./tutor-policy.js";
@@ -27,6 +30,7 @@ import type {
   PublicLessonTurn,
   VoicePipelineAudioInput,
   VoicePipelineAudioOutput,
+  VoicePipelineSessionState,
   VoicePipelineTurnRequest,
   VoicePipelineTurnResponse,
   VoicePreparedImage
@@ -47,6 +51,7 @@ const maxTutorAttempts = 2;
 
 export type VoicePipelineServiceEnv = {
   OPENAI_API_KEY: string | undefined;
+  OPENAI_GATE_CHECKER_MODEL?: string | undefined;
   OPENAI_TRANSCRIBE_MODEL: string | undefined;
   OPENAI_TTS_MODEL: string | undefined;
   OPENAI_TTS_VOICE: string | undefined;
@@ -63,7 +68,9 @@ type VoicePipelineOptions = {
 
 type TutorTurnInput = {
   detail: TutorSessionDetail;
+  gateStatus: ComprehensionGateStatus | null;
   image: VoicePreparedImage | null;
+  problemContext: ProblemContextRecord | null;
   studentText: string;
 };
 
@@ -93,27 +100,44 @@ export async function handleVoicePipelineTurnWithStore(
   const options = createVoicePipelineOptions(env);
   const studentText = await readStudentText(request, options);
   const fromPhase = detail.session.currentPhase;
+  let gateStatus = detail.session.gateStatus;
+  const problemContext = await store.getProblemContext(requestContext.ownerKey, request.sessionId);
 
-  // The server owns the phase; the generator only proposes a move within it, and the
-  // validator must accept that move before anything is spoken.
-  const action = await proposeTutorAction({ detail, image: request.image ?? null, studentText }, options);
+  let gateVerdict: Awaited<ReturnType<typeof checkGateRestatement>> | null = null;
+  if (shouldEvaluateGateRestatement(fromPhase, gateStatus, studentText, problemContext)) {
+    gateVerdict = await checkGateRestatement(problemContext!, studentText, env);
+    if (gateVerdict.accepted) {
+      gateStatus = "complete";
+    }
+  }
+
+  const action = await proposeTutorAction(
+    { detail, gateStatus, image: request.image ?? null, problemContext, studentText },
+    options
+  );
 
   const audio = await createTutorSpeech(action.spokenUtterance, options);
   const publicLesson = projectToPublicLesson(action);
+  const toPhase = nextPhaseFor(fromPhase, action, gateStatus);
+  const sessionState: VoicePipelineSessionState = {
+    currentPhase: toPhase,
+    gateStatus,
+    unknownTarget: problemContext?.unknownTarget ?? null
+  };
   const response = serializeVoicePipelineTurnResponse({
     audio,
     lesson: publicLesson,
+    session: sessionState,
     transcript: studentText,
     tutorText: action.spokenUtterance
   });
 
-  const toPhase = nextPhaseFor(fromPhase, action);
   // Optimistic lock on the phase we read. A null result means a concurrent turn already
   // moved the session off `fromPhase`, so this turn is stale: bail rather than recording a
   // transition that never happened or speaking over the turn that won the race.
   const advanced = await store.advanceSessionPhase(requestContext.ownerKey, request.sessionId, fromPhase, {
     currentPhase: toPhase,
-    gateStatus: detail.session.gateStatus,
+    gateStatus,
     supportLevel: detail.session.supportLevel
   });
   if (!advanced) {
@@ -131,6 +155,16 @@ export async function handleVoicePipelineTurnWithStore(
       text: studentText
     }
   });
+  if (gateVerdict) {
+    await store.appendEvent(requestContext.ownerKey, request.sessionId, {
+      message: "Gate check",
+      value: {
+        accepted: gateVerdict.accepted,
+        notes: gateVerdict.notes,
+        studentText
+      }
+    });
+  }
   await store.appendEvent(requestContext.ownerKey, request.sessionId, {
     message: tutorTurnEventMessage,
     value: {
@@ -145,9 +179,27 @@ export async function handleVoicePipelineTurnWithStore(
   return response;
 }
 
-function nextPhaseFor(fromPhase: SessionPhase, action: ProposedTutorAction): SessionPhase {
+function shouldEvaluateGateRestatement(
+  phase: SessionPhase,
+  gateStatus: ComprehensionGateStatus | null,
+  studentText: string,
+  problemContext: ProblemContextRecord | null
+): problemContext is ProblemContextRecord {
+  return (
+    phase === "frame_task" &&
+    gateStatus === "needs_restatement" &&
+    Boolean(studentText.trim()) &&
+    Boolean(problemContext?.unknownTarget?.trim())
+  );
+}
+
+function nextPhaseFor(
+  fromPhase: SessionPhase,
+  action: ProposedTutorAction,
+  gateStatus: ComprehensionGateStatus | null
+): SessionPhase {
   const proposed = action.statePatch?.nextPhase;
-  return proposed && canTransition(fromPhase, proposed) ? proposed : fromPhase;
+  return proposed && canTransition(fromPhase, proposed, gateStatus) ? proposed : fromPhase;
 }
 
 async function readStudentText(
@@ -195,6 +247,7 @@ async function proposeTutorAction(
   options: VoicePipelineOptions
 ): Promise<ProposedTutorAction> {
   const phase = input.detail.session.currentPhase;
+  const gateStatus = input.gateStatus;
   let rejectionReasons: string[] = [];
 
   for (let attempt = 0; attempt < maxTutorAttempts; attempt += 1) {
@@ -202,12 +255,12 @@ async function proposeTutorAction(
       apiKey: requireOpenAiApiKey(options),
       body: JSON.stringify({
         input: createTutorInput(input),
-        instructions: tutorActionInstructions(phase, rejectionReasons),
+        instructions: tutorActionInstructions(phase, gateStatus, rejectionReasons),
         model: options.tutorModel,
         text: {
           format: {
             name: "tutor_action",
-            schema: proposedTutorActionJsonSchema(phase),
+            schema: proposedTutorActionJsonSchema(phase, gateStatus),
             strict: true,
             type: "json_schema"
           }
@@ -315,15 +368,31 @@ function createTutorInput(input: TutorTurnInput): Array<Record<string, JsonValue
 }
 
 function createTutorPrompt(input: TutorTurnInput): string {
+  const phase = input.detail.session.currentPhase;
+
   return JSON.stringify(
     {
-      currentPhase: input.detail.session.currentPhase,
+      allowedMoves: allowedMoves(phase),
+      comprehensionGate: {
+        status: input.gateStatus,
+        unknownTarget: input.problemContext?.unknownTarget ?? null
+      },
+      currentPhase: phase,
       currentStudentTurn: input.studentText,
       currentSession: {
         imageName: input.detail.session.imageName,
         imagePrompt: input.detail.session.imagePrompt,
         status: input.detail.session.status
       },
+      forbiddenMoves: forbiddenMoves(phase),
+      problemFrame: input.problemContext
+        ? {
+            givens: input.problemContext.quantities,
+            relationships: input.problemContext.relationships,
+            unknownTarget: input.problemContext.unknownTarget,
+            visibleQuestion: input.problemContext.visibleQuestion
+          }
+        : null,
       // Events are stored newest-first; take the 14 most recent and present them
       // oldest-to-newest so the model reads the conversation in order.
       recentHistory: input.detail.events
@@ -339,9 +408,19 @@ function createTutorPrompt(input: TutorTurnInput): string {
   );
 }
 
-function tutorActionInstructions(phase: SessionPhase, rejectionReasons: string[]): string {
+function tutorActionInstructions(
+  phase: SessionPhase,
+  gateStatus: ComprehensionGateStatus | null,
+  rejectionReasons: string[]
+): string {
   const allowed = allowedMoves(phase).join(", ");
   const forbidden = forbiddenMoves(phase).join(", ");
+  const gateNote =
+    phase === "frame_task" && gateStatus !== "complete"
+      ? "\nThe comprehension gate is NOT complete — do not advance to planning or solving; help the child restate what we are finding."
+      : gateStatus === "complete"
+        ? "\nThe comprehension gate is complete — you may acknowledge their restatement and move on when ready."
+        : "";
   const retry = rejectionReasons.length
     ? `\n\nYour previous attempt was rejected for these reasons:\n- ${rejectionReasons.join("\n- ")}\nChoose a different move or rephrase so it passes.`
     : "";
@@ -352,7 +431,7 @@ You are the move generator for a server-enforced tutoring state machine. The ser
 
 Current phase: "${phase}".
 Moves you may use this phase: ${allowed}.
-Never use these moves: ${forbidden} — they solve or reveal the answer.
+Never use these moves: ${forbidden} — they solve or reveal the answer.${gateNote}
 
 Hard rules:
 - Return only the requested JSON schema.
@@ -361,12 +440,15 @@ Hard rules:
 - "nextPhase" is where the session should go next; keep it at "${phase}" unless the student is ready to move on.${retry}`;
 }
 
-function proposedTutorActionJsonSchema(phase: SessionPhase): Record<string, JsonValue> {
+function proposedTutorActionJsonSchema(
+  phase: SessionPhase,
+  gateStatus: ComprehensionGateStatus | null
+): Record<string, JsonValue> {
   return {
     additionalProperties: false,
     properties: {
       move: { enum: [...allowedMoves(phase)], type: "string" },
-      nextPhase: { enum: sessionPhases.filter((candidate) => canTransition(phase, candidate)), type: "string" },
+      nextPhase: { enum: [...allowedNextPhases(phase, gateStatus)], type: "string" },
       spokenUtterance: { type: "string" }
     },
     required: ["move", "nextPhase", "spokenUtterance"],

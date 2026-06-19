@@ -5,6 +5,7 @@ export const maxSessionEvents = 200;
 export type TutorSessionStatus = "draft" | "active" | "ended";
 
 import type { ExtractionOutcome } from "./problem-context/problem-context-types.js";
+import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
 
 export type SessionImageMeta = {
@@ -53,6 +54,7 @@ export const tutorTurnEventMessage = "Tutor turn";
 
 export type TutorSessionDetail = {
   events: SessionEventRecord[];
+  problemContext: ProblemContextRecord | null;
   session: TutorSessionRecord;
 };
 
@@ -63,6 +65,7 @@ export type CreateTutorSessionRequest = {
 export type UpdateTutorSessionRequest = {
   extractionNotes?: string | null;
   extractionOutcome?: ExtractionOutcome | null;
+  gateStatus?: ComprehensionGateStatus | null;
   imageMeta?: SessionImageMeta | null;
   imageName?: string | null;
   imageObjectKey?: string | null;
@@ -100,6 +103,7 @@ export function applyTutorSessionUpdate(
     ...session,
     extractionNotes: updateValue(request.extractionNotes, session.extractionNotes),
     extractionOutcome: updateValue(request.extractionOutcome, session.extractionOutcome),
+    gateStatus: updateValue(request.gateStatus, session.gateStatus),
     imageMeta: updateValue(request.imageMeta, session.imageMeta),
     imageName: updateValue(request.imageName, session.imageName),
     imageObjectKey: updateValue(request.imageObjectKey, session.imageObjectKey),

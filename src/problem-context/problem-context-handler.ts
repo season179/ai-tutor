@@ -66,9 +66,18 @@ export async function handleExtractQuestionRequest(
   const readUrl = await createProblemImageReadUrl(env, request.objectKey);
   const extraction = await extractQuestionFromImageUrl(readUrl.url, env);
 
+  await store.saveProblemContext(context.ownerKey, {
+    extractionConfidence: extraction.confidence,
+    extractionOutcome: extraction.outcome,
+    frame: extraction.frame,
+    r2ObjectKey: request.objectKey,
+    sessionId: request.sessionId
+  });
+
   await store.updateSession(context.ownerKey, request.sessionId, {
     extractionNotes: extraction.notes,
     extractionOutcome: extraction.outcome,
+    gateStatus: extraction.frame.unknownTarget ? "needs_restatement" : null,
     imageObjectKey: request.objectKey,
     imagePrompt: extraction.question || null,
     promptConfirmed: false
@@ -82,7 +91,8 @@ export async function handleExtractQuestionRequest(
       objectKey: request.objectKey,
       outcome: extraction.outcome,
       questionLength: extraction.question.length,
-      requiresConfirmation: extraction.requiresConfirmation
+      requiresConfirmation: extraction.requiresConfirmation,
+      unknownTarget: extraction.frame.unknownTarget
     }
   });
 

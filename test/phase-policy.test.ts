@@ -33,7 +33,8 @@ test("safety moves are legal in any phase", () => {
 });
 
 test("phase transitions follow the workflow graph", () => {
-  assert.equal(canTransition("frame_task", "plan_first_step"), true);
+  assert.equal(canTransition("frame_task", "plan_first_step", "complete"), true);
+  assert.equal(canTransition("frame_task", "plan_first_step", "needs_restatement"), false);
   assert.equal(canTransition("frame_task", "step_loop"), false); // can't skip planning
   assert.equal(canTransition("step_loop", "session_open"), false); // no going back to the start
   assert.equal(canTransition("frame_task", "frame_task"), true); // staying put

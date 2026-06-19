@@ -1,4 +1,5 @@
 import { HttpError, sessionNotFoundHttpError } from "./http-error.js";
+import { problemFrameFromConfirmedPrompt } from "./problem-context/problem-frame.js";
 import {
   parseAppendSessionEventRequest,
   parseCreateTutorSessionRequest,
@@ -47,6 +48,27 @@ export async function updateSession(
   store: SessionStore
 ) {
   const request = parseUpdateTutorSessionRequest(body);
+  const confirmedPrompt = request.promptConfirmed === true ? request.imagePrompt?.trim() : "";
+
+  if (confirmedPrompt) {
+    const existing = await store.getSession(context.ownerKey, sessionId);
+    if (!existing) {
+      throw sessionNotFoundHttpError();
+    }
+
+    await store.saveProblemContext(context.ownerKey, {
+      extractionConfidence: existing.session.extractionOutcome ? "medium" : null,
+      extractionOutcome: existing.session.extractionOutcome ?? "extracted",
+      frame: problemFrameFromConfirmedPrompt(confirmedPrompt),
+      r2ObjectKey: existing.session.imageObjectKey,
+      sessionId
+    });
+
+    if (existing.session.gateStatus !== "complete") {
+      request.gateStatus = "needs_restatement";
+    }
+  }
+
   return requireSessionResult(await store.updateSession(context.ownerKey, sessionId, request));
 }
 

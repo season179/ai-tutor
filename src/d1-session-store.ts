@@ -1,23 +1,29 @@
-import type {
-  AppendSessionEventRequest,
-  CreateTutorSessionRequest,
-  SessionEventRecord,
-  TutorSessionDetail,
-  TutorSessionRecord,
-  TutorSessionSummary,
-  UpdateTutorSessionRequest
-} from "./session-types.js";
-import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
-import type { SessionPhase } from "./tutor-action.js";
 import {
+  applyTutorSessionUpdate,
+  maxSessionEvents,
+  toTutorSessionSummary,
+  type AppendSessionEventRequest,
+  type CreateTutorSessionRequest,
+  type SessionEventRecord,
+  type TutorSessionDetail,
+  type TutorSessionRecord,
+  type TutorSessionSummary,
+  type UpdateTutorSessionRequest
+} from "./session-types.js";
+import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
+import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
+import {
+  createProblemContextRecord,
   createSessionEventRecord,
   createTutorSessionRecord,
   mapD1EventRow,
+  mapD1ProblemContextRow,
   mapD1SessionRow,
   nowIso,
   rowStringOrNull,
-  serializeImageMeta
+  serializeImageMeta,
+  serializeProblemContext
 } from "./memory-session-store.js";
 
 const tutorSessionColumns =
@@ -131,6 +137,26 @@ export class D1SessionStore implements SessionStore {
     return session;
   }
 
+  async getProblemContext(ownerKey: string, sessionId: string): Promise<ProblemContextRecord | null> {
+    const session = await this.getOwnedSessionRow(ownerKey, sessionId);
+    if (!session) {
+      return null;
+    }
+
+    const row = await this.db
+      .prepare(
+        `SELECT id, session_id, r2_object_key, extracted_text, confirmed_question, extraction_outcome,
+                extraction_confidence, problem_type, skill_keys_json, quantities_json, relationships_json,
+                unknown_target, diagram_description, task_language, language_is_subject, created_at, updated_at
+         FROM problem_contexts
+         WHERE session_id = ?`
+      )
+      .bind(sessionId)
+      .first();
+
+    return row ? mapD1ProblemContextRow(row as Record<string, unknown>) : null;
+  }
+
   async getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null> {
     const sessionRow = await this.getOwnedSessionRow(ownerKey, sessionId);
     if (!sessionRow) {
@@ -149,9 +175,11 @@ export class D1SessionStore implements SessionStore {
       .all();
 
     const events = d1Rows(eventsResult).map(mapD1EventRow);
+    const problemContext = await this.getProblemContext(ownerKey, sessionId);
 
     return {
       events,
+      problemContext,
       session: mapD1SessionRow(sessionRow)
     };
   }
@@ -168,6 +196,72 @@ export class D1SessionStore implements SessionStore {
       .all();
 
     return d1Rows(result).map((row) => toTutorSessionSummary(mapD1SessionRow(row)));
+  }
+
+  async saveProblemContext(
+    ownerKey: string,
+    request: SaveProblemContextRequest
+  ): Promise<ProblemContextRecord> {
+    const session = await this.getOwnedSessionRow(ownerKey, request.sessionId);
+    if (!session) {
+      throw sessionStoreNotFoundError();
+    }
+
+    const existing = await this.getProblemContext(ownerKey, request.sessionId);
+    const timestamp = nowIso();
+    const record = createProblemContextRecord(
+      request,
+      existing?.createdAt ?? timestamp,
+      existing?.id ?? crypto.randomUUID()
+    );
+    record.updatedAt = timestamp;
+
+    const serialized = serializeProblemContext(record);
+    await this.db
+      .prepare(
+        `INSERT INTO problem_contexts (
+           id, session_id, r2_object_key, extracted_text, confirmed_question, extraction_outcome,
+           extraction_confidence, problem_type, skill_keys_json, quantities_json, relationships_json,
+           unknown_target, diagram_description, task_language, language_is_subject, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           r2_object_key = excluded.r2_object_key,
+           extracted_text = excluded.extracted_text,
+           confirmed_question = excluded.confirmed_question,
+           extraction_outcome = excluded.extraction_outcome,
+           extraction_confidence = excluded.extraction_confidence,
+           problem_type = excluded.problem_type,
+           skill_keys_json = excluded.skill_keys_json,
+           quantities_json = excluded.quantities_json,
+           relationships_json = excluded.relationships_json,
+           unknown_target = excluded.unknown_target,
+           diagram_description = excluded.diagram_description,
+           task_language = excluded.task_language,
+           language_is_subject = excluded.language_is_subject,
+           updated_at = excluded.updated_at`
+      )
+      .bind(
+        serialized.id,
+        serialized.session_id,
+        serialized.r2_object_key,
+        serialized.extracted_text,
+        serialized.confirmed_question,
+        serialized.extraction_outcome,
+        serialized.extraction_confidence,
+        serialized.problem_type,
+        serialized.skill_keys_json,
+        serialized.quantities_json,
+        serialized.relationships_json,
+        serialized.unknown_target,
+        serialized.diagram_description,
+        serialized.task_language,
+        serialized.language_is_subject,
+        serialized.created_at,
+        serialized.updated_at
+      )
+      .run();
+
+    return record;
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
@@ -204,7 +298,7 @@ export class D1SessionStore implements SessionStore {
     await this.db
       .prepare(
         `UPDATE tutor_sessions
-         SET title = ?, status = ?, image_prompt = ?, image_name = ?, image_meta_json = ?, image_object_key = ?, extraction_outcome = ?, extraction_notes = ?, prompt_confirmed = ?, updated_at = ?
+         SET title = ?, status = ?, image_prompt = ?, image_name = ?, image_meta_json = ?, image_object_key = ?, extraction_outcome = ?, extraction_notes = ?, prompt_confirmed = ?, gate_status = ?, updated_at = ?
          WHERE id = ? AND owner_key = ?`
       )
       .bind(
@@ -217,6 +311,7 @@ export class D1SessionStore implements SessionStore {
         updated.extractionOutcome,
         updated.extractionNotes,
         updated.promptConfirmed ? 1 : 0,
+        updated.gateStatus,
         updated.updatedAt,
         sessionId,
         ownerKey

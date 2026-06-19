@@ -31,6 +31,22 @@ const r2Env = {
   R2_SECRET_ACCESS_KEY: "test-secret-key"
 };
 
+const fullExtractionPayload = {
+  confidence: "high" as const,
+  diagramDescription: null,
+  extractedText: "What is the value of x?",
+  languageIsSubject: false,
+  likelySkillKeys: [],
+  notes: null,
+  outcome: "extracted" as const,
+  problemType: "equation" as const,
+  quantities: [],
+  question: "What is the value of x?",
+  relationships: [],
+  taskLanguage: "en",
+  unknownTarget: "the value of x"
+};
+
 test("createProblemImageObjectKey scopes keys to session", () => {
   const objectKey = createProblemImageObjectKey("session-1");
 
@@ -108,12 +124,7 @@ test("handleExtractQuestionRequest sends an R2 URL to OpenAI and parses the ques
     if (url === "https://api.openai.com/v1/responses") {
       openAiBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return Response.json({
-        output_text: JSON.stringify({
-          confidence: "high",
-          notes: null,
-          outcome: "extracted",
-          question: "What is the value of x?"
-        })
+        output_text: JSON.stringify(fullExtractionPayload)
       });
     }
 
@@ -146,6 +157,8 @@ test("handleExtractQuestionRequest sends an R2 URL to OpenAI and parses the ques
     assert.equal(updated?.session.imagePrompt, "What is the value of x?");
     assert.equal(updated?.session.extractionOutcome, "extracted");
     assert.equal(updated?.session.promptConfirmed, false);
+    assert.equal(updated?.session.gateStatus, "needs_restatement");
+    assert.equal(updated?.problemContext?.unknownTarget, "the value of x");
 
     const extractedEvent = updated?.events.find((event) => event.message === "Question extracted");
     assert.ok(extractedEvent);
@@ -163,10 +176,13 @@ test("extractQuestionFromImageUrl handles low-confidence empty questions", async
     if (url === "https://api.openai.com/v1/responses") {
       return Response.json({
         output_text: JSON.stringify({
+          ...fullExtractionPayload,
           confidence: "low",
+          extractedText: "",
           notes: "No readable question was visible.",
           outcome: "none",
-          question: ""
+          question: "",
+          unknownTarget: null
         })
       });
     }
@@ -189,10 +205,10 @@ test("extractQuestionFromImageUrl handles low-confidence empty questions", async
 
 test("normalizeExtractionResponse never returns extracted for empty questions", () => {
   const normalized = normalizeExtractionResponse({
-    confidence: "high",
-    notes: null,
-    outcome: "extracted",
-    question: "   "
+    ...fullExtractionPayload,
+    question: "   ",
+    extractedText: "   ",
+    unknownTarget: null
   });
 
   assert.equal(normalized.outcome, "none");
@@ -214,10 +230,14 @@ test("handleExtractQuestionRequest persists partial extraction metadata", async 
     if (url === "https://api.openai.com/v1/responses") {
       return Response.json({
         output_text: JSON.stringify({
+          ...fullExtractionPayload,
           confidence: "medium",
+          extractedText: "Find the area of the triangle.",
           notes: "Bottom of the page was cut off.",
           outcome: "partial",
-          question: "Find the area of the triangle."
+          problemType: "geometry",
+          question: "Find the area of the triangle.",
+          unknownTarget: "the area of the triangle"
         })
       });
     }

@@ -4,7 +4,7 @@ import {
   createVoiceClientAdapter,
   type VoiceClientEvent
 } from "../../voice-client-adapter.js";
-import type { VoiceSessionDescriptor } from "../../voice-types.js";
+import type { VoiceSessionDescriptor, VoicePipelineSessionState } from "../../voice-types.js";
 import { errorLogValue, errorMessage } from "../lib/error-message.js";
 import { updateSession } from "../lib/session-api.js";
 import { requestVoiceSessionDescriptor } from "../lib/voice-session-api.js";
@@ -63,6 +63,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   startSession: (options?: StartSessionOptions) => Promise<TutorSessionState>;
   status: AppStatus;
   stopSession: () => void;
+  turnSessionState: VoicePipelineSessionState | null;
 } {
   const [status, setStatusState] = useState<AppStatus>({
     message: readyStatusMessage,
@@ -70,6 +71,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   });
   const [isRunning, setIsRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [turnSessionState, setTurnSessionState] = useState<VoicePipelineSessionState | null>(null);
 
   const sessionRef = useRef<TutorSessionState | undefined>(undefined);
   const startSessionPromiseRef = useRef<Promise<TutorSessionState> | undefined>(undefined);
@@ -197,6 +199,9 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
             return;
           case "tutor_text":
             logEvent("Tutor said", event.text);
+            return;
+          case "session_state":
+            setTurnSessionState(event.session);
             return;
         }
       }),
@@ -394,6 +399,10 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   );
 
   useEffect(() => {
+    setTurnSessionState(null);
+  }, [sessionId]);
+
+  useEffect(() => {
     return () => {
       const activeSession = sessionRef.current;
       if (!activeSession) {
@@ -415,6 +424,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     startAudioTurn,
     startSession,
     status,
-    stopSession
+    stopSession,
+    turnSessionState
   };
 }

@@ -15,6 +15,7 @@ import type {
   OpenAIVoicePipelineSessionDescriptor,
   OpenAIRealtimeSessionDescriptor,
   VoiceBackend,
+  VoicePipelineSessionState,
   VoiceSessionDescriptor,
   VoiceUserTurn
 } from "./voice-types.js";
@@ -32,6 +33,7 @@ export type VoiceClientEvent =
   | { error: unknown; type: "error" }
   | { text: string; type: "student_transcript" }
   | { text: string; type: "tutor_text" }
+  | { session: VoicePipelineSessionState; type: "session_state" }
   | { label: string; type: "debug_event"; value?: unknown };
 
 export type VoiceClientEventHandler = (event: VoiceClientEvent) => void;
@@ -288,6 +290,7 @@ class OpenAIVoicePipelineClientAdapter extends BaseVoiceClientAdapter {
     }
 
     this.emit({ text: response.tutorText, type: "tutor_text" });
+    this.emit({ session: response.session, type: "session_state" });
     await this.playTutorAudio(response.audio.dataUrl);
     this.emit({ type: "reply_finished" });
   }

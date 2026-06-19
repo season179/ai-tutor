@@ -1196,6 +1196,20 @@ pre {
   color: var(--muted);
 }
 
+.target-chip--framed {
+  background: oklch(0.96 0.02 148);
+  border: 1.5px solid var(--focus);
+  box-shadow: 0 0 0 3px oklch(0.82 0.083 148 / 0.25);
+  color: var(--ink);
+}
+
+.target-chip .star {
+  color: currentColor;
+  flex: 0 0 auto;
+  height: 0.9rem;
+  width: 0.9rem;
+}
+
 .transcript {
   display: flex;
   flex: 0 0 auto;

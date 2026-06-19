@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type {
   LiveKitAgentsSessionDescriptor,
   LessonControllerTurn,
@@ -8,6 +9,7 @@ import type {
   PublicLessonTurn,
   TutorPolicy,
   VoiceCapabilities,
+  VoicePipelineSessionState,
   VoicePipelineTurnRequest,
   VoicePipelineTurnResponse,
   VoicePreparedImage,
@@ -116,6 +118,11 @@ export const voicePipelineTurnResponseSchema = z.object({
     size: z.number().int().positive()
   }),
   lesson: publicLessonTurnSchema,
+  session: z.object({
+    currentPhase: z.enum(sessionPhases),
+    gateStatus: z.enum(comprehensionGateStatuses).nullable(),
+    unknownTarget: z.string().nullable()
+  }) satisfies z.ZodType<VoicePipelineSessionState>,
   transcript: z.string(),
   tutorText: z.string().min(1)
 }) satisfies z.ZodType<VoicePipelineTurnResponse>;

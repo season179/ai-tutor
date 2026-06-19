@@ -10,9 +10,10 @@ import type {
   UpdateTutorSessionRequest
 } from "./session-types.js";
 import type { ExtractionOutcome } from "./problem-context/problem-context-types.js";
+import { problemTypes, type ProblemContextRecord, type ProblemFrame, type ProblemQuantity, type ProblemType } from "./problem-context/problem-frame.js";
 import { isJsonObject } from "./schema-parser.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import { initialPhase } from "./phase-policy.js";
 import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
@@ -98,6 +99,125 @@ function parseImageMeta(value: string | null): SessionImageMeta | null {
   return null;
 }
 
+function serializeStringArray(value: readonly string[]): string {
+  return JSON.stringify([...value]);
+}
+
+function parseStringArray(value: string | null): string[] {
+  const parsed = parseJsonOrNull(value);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.filter((item): item is string => typeof item === "string");
+}
+
+function parseProblemQuantities(value: string | null): ProblemQuantity[] {
+  const parsed = parseJsonOrNull(value);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const quantities: ProblemQuantity[] = [];
+  for (const item of parsed) {
+    if (!isJsonObject(item)) {
+      continue;
+    }
+
+    const raw = item.raw;
+    const label = item.label;
+    const unit = item.unit;
+    if (typeof raw !== "string" || typeof label !== "string") {
+      continue;
+    }
+
+    quantities.push({
+      label,
+      raw,
+      ...(typeof unit === "string" && unit ? { unit } : {})
+    });
+  }
+
+  return quantities;
+}
+
+function parseProblemType(value: string | null): ProblemType {
+  return problemTypes.includes(value as ProblemType) ? (value as ProblemType) : "other";
+}
+
+function serializeProblemQuantities(value: readonly ProblemQuantity[]): string {
+  return JSON.stringify(value.map((quantity) => ({ label: quantity.label, raw: quantity.raw, unit: quantity.unit ?? null })));
+}
+
+function createProblemContextRecord(
+  request: SaveProblemContextRequest,
+  createdAt: string,
+  id: string
+): ProblemContextRecord {
+  return {
+    ...request.frame,
+    confirmedQuestion: request.confirmedQuestion ?? null,
+    createdAt,
+    extractionConfidence: request.extractionConfidence,
+    extractionOutcome: request.extractionOutcome,
+    id,
+    r2ObjectKey: request.r2ObjectKey ?? null,
+    sessionId: request.sessionId,
+    updatedAt: createdAt
+  };
+}
+
+export function serializeProblemContext(record: ProblemContextRecord): Record<string, unknown> {
+  return {
+    confirmed_question: record.confirmedQuestion,
+    created_at: record.createdAt,
+    diagram_description: record.diagramDescription,
+    extracted_text: record.extractedText,
+    extraction_confidence: record.extractionConfidence,
+    extraction_outcome: record.extractionOutcome,
+    id: record.id,
+    language_is_subject: record.languageIsSubject ? 1 : 0,
+    problem_type: record.problemType,
+    quantities_json: serializeProblemQuantities(record.quantities),
+    r2_object_key: record.r2ObjectKey,
+    relationships_json: serializeStringArray(record.relationships),
+    session_id: record.sessionId,
+    skill_keys_json: serializeStringArray(record.likelySkillKeys),
+    task_language: record.taskLanguage,
+    unknown_target: record.unknownTarget,
+    updated_at: record.updatedAt
+  };
+}
+
+export function mapD1ProblemContextRow(row: Record<string, unknown>): ProblemContextRecord {
+  const extractedText = String(row.extracted_text ?? "");
+  const confirmedQuestion = rowStringOrNull(row.confirmed_question);
+
+  return {
+    confirmedQuestion,
+    createdAt: String(row.created_at),
+    diagramDescription: rowStringOrNull(row.diagram_description),
+    extractedText,
+    extractionConfidence:
+      row.extraction_confidence === "high" || row.extraction_confidence === "medium" || row.extraction_confidence === "low"
+        ? row.extraction_confidence
+        : null,
+    extractionOutcome: parseExtractionOutcome(String(row.extraction_outcome)) ?? "none",
+    id: String(row.id),
+    languageIsSubject: Number(row.language_is_subject ?? 0) === 1,
+    likelySkillKeys: parseStringArray(rowStringOrNull(row.skill_keys_json)),
+    problemType: parseProblemType(rowStringOrNull(row.problem_type)),
+    quantities: parseProblemQuantities(rowStringOrNull(row.quantities_json)),
+    r2ObjectKey: rowStringOrNull(row.r2_object_key),
+    relationships: parseStringArray(rowStringOrNull(row.relationships_json)),
+    sessionId: String(row.session_id),
+    taskLanguage: rowStringOrNull(row.task_language) ?? "en",
+    unknownTarget: rowStringOrNull(row.unknown_target),
+    updatedAt: String(row.updated_at),
+    visibleQuestion: confirmedQuestion ?? extractedText
+  };
+}
+
 function serializeImageMeta(value: SessionImageMeta | null | undefined): string | null {
   return value ? JSON.stringify(value) : null;
 }
@@ -145,6 +265,7 @@ function createSessionEventRecord(
 
 export class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
+  private readonly problemContexts = new Map<string, ProblemContextRecord>();
   private nextEventId = 1;
 
   async advanceSessionPhase(
@@ -193,6 +314,14 @@ export class MemorySessionStore implements SessionStore {
     return this.toRecord(session);
   }
 
+  async getProblemContext(ownerKey: string, sessionId: string): Promise<ProblemContextRecord | null> {
+    if (!this.getOwnedSession(ownerKey, sessionId)) {
+      return null;
+    }
+
+    return this.problemContexts.get(sessionId) ?? null;
+  }
+
   async getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null> {
     const session = this.getOwnedSession(ownerKey, sessionId);
     if (!session) {
@@ -201,6 +330,7 @@ export class MemorySessionStore implements SessionStore {
 
     return {
       events: [...session.events],
+      problemContext: this.problemContexts.get(sessionId) ?? null,
       session: this.toRecord(session)
     };
   }
@@ -210,6 +340,24 @@ export class MemorySessionStore implements SessionStore {
       .filter((session) => session.ownerKey === ownerKey)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .map((session) => toTutorSessionSummary(this.toRecord(session)));
+  }
+
+  async saveProblemContext(
+    ownerKey: string,
+    request: SaveProblemContextRequest
+  ): Promise<ProblemContextRecord> {
+    this.requireOwnedSession(ownerKey, request.sessionId);
+    const existing = this.problemContexts.get(request.sessionId);
+    const timestamp = nowIso();
+    const record = createProblemContextRecord(
+      request,
+      existing?.createdAt ?? timestamp,
+      existing?.id ?? crypto.randomUUID()
+    );
+    record.updatedAt = timestamp;
+
+    this.problemContexts.set(request.sessionId, record);
+    return record;
   }
 
   async sessionExists(ownerKey: string, sessionId: string): Promise<boolean> {
@@ -296,6 +444,7 @@ export function mapD1EventRow(row: Record<string, unknown>): SessionEventRecord 
 }
 
 export {
+  createProblemContextRecord,
   createSessionEventRecord,
   createTutorSessionRecord,
   nowIso,

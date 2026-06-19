@@ -1,3 +1,5 @@
+import type { ComprehensionGateStatus, SessionPhase } from "./tutor-action.js";
+
 export const voiceSessionPath = "/api/voice/session";
 export const voiceTurnPath = "/api/voice/turn";
 export const maxVoiceTurnBodyBytes = 8_000_000;
@@ -114,9 +116,16 @@ export type VoicePipelineAudioOutput = {
   size: number;
 };
 
+export type VoicePipelineSessionState = {
+  currentPhase: SessionPhase;
+  gateStatus: ComprehensionGateStatus | null;
+  unknownTarget: string | null;
+};
+
 export type VoicePipelineTurnResponse = {
   audio: VoicePipelineAudioOutput;
   lesson: PublicLessonTurn;
+  session: VoicePipelineSessionState;
   transcript: string;
   tutorText: string;
 };

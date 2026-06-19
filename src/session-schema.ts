@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { extractionOutcomes } from "./problem-context/problem-context-types.js";
+import { problemTypes } from "./problem-context/problem-frame.js";
 import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type {
   AppendSessionEventRequest,
@@ -33,6 +34,7 @@ export const updateTutorSessionRequestSchema = z
   .object({
     extractionNotes: z.string().max(2_000).nullable().optional(),
     extractionOutcome: extractionOutcomeSchema.nullable().optional(),
+    gateStatus: z.enum(comprehensionGateStatuses).nullable().optional(),
     imageMeta: sessionImageMetaSchema.nullable().optional(),
     imageName: z.string().trim().min(1).max(255).nullable().optional(),
     imageObjectKey: z.string().trim().min(1).max(512).nullable().optional(),
@@ -81,8 +83,38 @@ const sessionEventRecordSchema = z.object({
   value: z.unknown()
 }) satisfies z.ZodType<SessionEventRecord>;
 
+const problemContextRecordSchema = z.object({
+  confirmedQuestion: z.string().nullable(),
+  createdAt: z.string().min(1),
+  diagramDescription: z.string().nullable(),
+  extractedText: z.string(),
+  extractionConfidence: z.enum(["high", "medium", "low"]).nullable(),
+  extractionOutcome: extractionOutcomeSchema,
+  id: z.string().min(1),
+  languageIsSubject: z.boolean(),
+  likelySkillKeys: z.array(z.string()),
+  problemType: z.enum(problemTypes),
+  quantities: z.array(
+    z
+      .object({
+        label: z.string(),
+        raw: z.string(),
+        unit: z.string()
+      })
+      .partial({ unit: true })
+  ),
+  r2ObjectKey: z.string().nullable(),
+  relationships: z.array(z.string()),
+  sessionId: z.string().min(1),
+  taskLanguage: z.string(),
+  unknownTarget: z.string().nullable(),
+  updatedAt: z.string().min(1),
+  visibleQuestion: z.string()
+});
+
 export const tutorSessionDetailSchema = z.object({
   events: z.array(sessionEventRecordSchema),
+  problemContext: problemContextRecordSchema.nullable(),
   session: tutorSessionRecordSchema
 }) satisfies z.ZodType<TutorSessionDetail>;
 

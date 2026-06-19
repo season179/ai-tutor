@@ -1,6 +1,14 @@
 import { HttpError, type JsonValue } from "../http-error.js";
 import { extractOutputText, fetchOpenAiJson, requireOpenAiApiKey } from "../openai-responses.js";
 import { isJsonObject } from "../schema-parser.js";
+import {
+  defaultProblemFrame,
+  frameContainsComputedSolution,
+  problemTypes,
+  type ProblemFrame,
+  type ProblemQuantity,
+  type ProblemType
+} from "./problem-frame.js";
 import type { ExtractionOutcome, ExtractQuestionResponse } from "./problem-context-types.js";
 
 export const defaultVisionModel = "gpt-5.5";
@@ -12,15 +20,27 @@ export type QuestionExtractionServiceEnv = {
   OPENAI_VISION_MODEL: string | undefined;
 };
 
-const extractionInstructions = `Extract the main homework, math, or science problem question from this image.
-Return the question as plain text the student would read.
+const extractionInstructions = `Extract the homework problem *frame* from this image — what is given and what the student must find.
+Return the visible question text, givens (quantities and relationships), the unknown target, problem type, and task language.
+Never include a computed final answer, solved value, or arithmetic result — only what the problem asks the student to find.
 If multiple complete problems exist, return the first complete one and set outcome to multiple_questions.
-If the image is not a homework or school problem (for example a selfie, meme, or unrelated photo), set outcome to not_a_problem.
+If the image is not a homework or school problem, set outcome to not_a_problem.
 If no readable question is visible, set outcome to none and explain in notes.
 If text is visible but incomplete, garbled, or missing key parts, set outcome to partial.
 If a complete question is visible, set outcome to extracted.
 Set confidence to high, medium, or low based on how certain you are.
 Use notes for brief explanations when outcome is not extracted.`;
+
+const quantitySchema = {
+  additionalProperties: false,
+  properties: {
+    label: { type: "string" },
+    raw: { type: "string" },
+    unit: { type: ["string", "null"] }
+  },
+  required: ["label", "raw", "unit"],
+  type: "object"
+} as const;
 
 const extractedQuestionJsonSchema = {
   additionalProperties: false,
@@ -29,6 +49,13 @@ const extractedQuestionJsonSchema = {
       enum: ["high", "low", "medium"],
       type: "string"
     },
+    diagramDescription: { type: ["string", "null"] },
+    extractedText: { type: "string" },
+    languageIsSubject: { type: "boolean" },
+    likelySkillKeys: {
+      items: { type: "string" },
+      type: "array"
+    },
     notes: {
       type: ["string", "null"]
     },
@@ -36,11 +63,39 @@ const extractedQuestionJsonSchema = {
       enum: ["extracted", "multiple_questions", "none", "not_a_problem", "partial"],
       type: "string"
     },
+    problemType: {
+      enum: [...problemTypes],
+      type: "string"
+    },
+    quantities: {
+      items: quantitySchema,
+      type: "array"
+    },
     question: {
       type: "string"
-    }
+    },
+    relationships: {
+      items: { type: "string" },
+      type: "array"
+    },
+    taskLanguage: { type: "string" },
+    unknownTarget: { type: ["string", "null"] }
   },
-  required: ["question", "confidence", "notes", "outcome"],
+  required: [
+    "question",
+    "confidence",
+    "notes",
+    "outcome",
+    "extractedText",
+    "problemType",
+    "likelySkillKeys",
+    "quantities",
+    "relationships",
+    "unknownTarget",
+    "diagramDescription",
+    "taskLanguage",
+    "languageIsSubject"
+  ],
   type: "object"
 } as const;
 
@@ -54,10 +109,44 @@ export function createQuestionExtractionOptions(env: QuestionExtractionServiceEn
   };
 }
 
+type RawExtractionPayload = {
+  confidence: ExtractQuestionResponse["confidence"];
+  diagramDescription: string | null;
+  extractedText: string;
+  languageIsSubject: boolean;
+  likelySkillKeys: string[];
+  notes: string | null;
+  outcome: ExtractionOutcome;
+  problemType: ProblemType;
+  quantities: ProblemQuantity[];
+  question: string;
+  relationships: string[];
+  taskLanguage: string;
+  unknownTarget: string | null;
+};
+
+export function buildProblemFrame(payload: RawExtractionPayload): ProblemFrame {
+  const visibleQuestion = payload.question.trim() || payload.extractedText.trim();
+
+  return {
+    diagramDescription: payload.diagramDescription?.trim() || null,
+    extractedText: payload.extractedText.trim() || visibleQuestion,
+    languageIsSubject: payload.languageIsSubject,
+    likelySkillKeys: payload.likelySkillKeys,
+    problemType: payload.problemType,
+    quantities: payload.quantities,
+    relationships: payload.relationships,
+    taskLanguage: payload.taskLanguage.trim() || "en",
+    unknownTarget: payload.unknownTarget?.trim() || null,
+    visibleQuestion
+  };
+}
+
 export function normalizeExtractionResponse(
-  value: Pick<ExtractQuestionResponse, "confidence" | "notes" | "outcome" | "question">
+  value: RawExtractionPayload
 ): ExtractQuestionResponse {
-  const question = value.question.trim();
+  const frame = buildProblemFrame(value);
+  const question = frame.visibleQuestion;
   let outcome = value.outcome;
   let notes = value.notes?.trim() || null;
 
@@ -79,8 +168,15 @@ export function normalizeExtractionResponse(
     notes = "This image does not look like a homework problem.";
   }
 
+  if (frameContainsComputedSolution(frame)) {
+    outcome = outcome === "extracted" ? "partial" : outcome;
+    notes = notes ?? "Extraction may have included a computed answer; please confirm the question.";
+    frame.unknownTarget = frame.unknownTarget?.replace(/\bthe (?:final )?answer is\s+[-+]?\$?\d+/gi, "").trim() || null;
+  }
+
   return {
     confidence: value.confidence,
+    frame,
     notes,
     outcome,
     question,
@@ -146,10 +242,7 @@ export async function extractQuestionFromImageUrl(
   }
 }
 
-function parseExtractQuestionResponse(value: JsonValue): Pick<
-  ExtractQuestionResponse,
-  "confidence" | "notes" | "outcome" | "question"
-> {
+function parseExtractQuestionResponse(value: JsonValue): RawExtractionPayload {
   if (!isJsonObject(value)) {
     throw new Error("Extraction payload must be an object.");
   }
@@ -158,6 +251,15 @@ function parseExtractQuestionResponse(value: JsonValue): Pick<
   const question = value.question;
   const notes = value.notes;
   const outcome = value.outcome;
+  const extractedText = value.extractedText;
+  const problemType = value.problemType;
+  const likelySkillKeys = value.likelySkillKeys;
+  const quantities = value.quantities;
+  const relationships = value.relationships;
+  const unknownTarget = value.unknownTarget;
+  const diagramDescription = value.diagramDescription;
+  const taskLanguage = value.taskLanguage;
+  const languageIsSubject = value.languageIsSubject;
 
   if (confidence !== "high" && confidence !== "medium" && confidence !== "low") {
     throw new Error("Extraction payload confidence was invalid.");
@@ -181,10 +283,96 @@ function parseExtractQuestionResponse(value: JsonValue): Pick<
     throw new Error("Extraction payload outcome was invalid.");
   }
 
+  if (typeof extractedText !== "string") {
+    throw new Error("Extraction payload extractedText was invalid.");
+  }
+
+  if (!problemTypes.includes(problemType as ProblemType)) {
+    throw new Error("Extraction payload problemType was invalid.");
+  }
+
+  if (!Array.isArray(likelySkillKeys) || !likelySkillKeys.every((item) => typeof item === "string")) {
+    throw new Error("Extraction payload likelySkillKeys was invalid.");
+  }
+
+  if (!Array.isArray(relationships) || !relationships.every((item) => typeof item === "string")) {
+    throw new Error("Extraction payload relationships was invalid.");
+  }
+
+  if (unknownTarget !== null && typeof unknownTarget !== "string") {
+    throw new Error("Extraction payload unknownTarget was invalid.");
+  }
+
+  if (diagramDescription !== null && typeof diagramDescription !== "string") {
+    throw new Error("Extraction payload diagramDescription was invalid.");
+  }
+
+  if (typeof taskLanguage !== "string") {
+    throw new Error("Extraction payload taskLanguage was invalid.");
+  }
+
+  if (typeof languageIsSubject !== "boolean") {
+    throw new Error("Extraction payload languageIsSubject was invalid.");
+  }
+
+  const parsedQuantities: ProblemQuantity[] = [];
+  if (!Array.isArray(quantities)) {
+    throw new Error("Extraction payload quantities was invalid.");
+  }
+
+  for (const item of quantities) {
+    if (!isJsonObject(item)) {
+      continue;
+    }
+
+    const raw = item.raw;
+    const label = item.label;
+    const unit = item.unit;
+    if (typeof raw !== "string" || typeof label !== "string") {
+      continue;
+    }
+
+    parsedQuantities.push({
+      label,
+      raw,
+      ...(typeof unit === "string" && unit ? { unit } : {})
+    });
+  }
+
   return {
     confidence,
+    diagramDescription,
+    extractedText: extractedText.trim(),
+    languageIsSubject,
+    likelySkillKeys,
     notes,
     outcome,
-    question: question.trim()
+    problemType: problemType as ProblemType,
+    quantities: parsedQuantities,
+    question: question.trim(),
+    relationships,
+    taskLanguage,
+    unknownTarget: unknownTarget?.trim() || null
   };
 }
+
+export function emptyExtractionResponse(question = ""): ExtractQuestionResponse {
+  return normalizeExtractionResponse({
+    confidence: "low",
+    diagramDescription: null,
+    extractedText: question,
+    languageIsSubject: false,
+    likelySkillKeys: [],
+    notes: question ? null : "No readable question was visible.",
+    outcome: question ? "partial" : "none",
+    problemType: "other",
+    quantities: [],
+    question,
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: null
+  });
+}
+
+// Re-export for tests that import from the service module.
+export { defaultProblemFrame, frameContainsComputedSolution };
