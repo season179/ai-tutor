@@ -56,8 +56,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
   finishAudioTurn: () => Promise<void>;
   isRunning: boolean;
   isRecording: boolean;
-  getPayloadLimitBytes: () => number | undefined;
-  ensureSessionReadyForImage: () => Promise<TutorSessionState>;
+  sendTextTurn: (text: string) => Promise<void>;
   setStatus: (message: string, tone?: StatusTone) => void;
   startAudioTurn: () => void;
   startSession: (options?: StartSessionOptions) => Promise<TutorSessionState>;
@@ -372,30 +371,45 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     }
   }, [logEvent, setStatus]);
 
-  const ensureSessionReadyForImage = useCallback(async (): Promise<TutorSessionState> => {
-    const activeSession = sessionRef.current;
+  // Typed turns share the audio path: connect on demand (without a greeting, since
+  // the child's message is the opening turn), send the text, and let the backend
+  // reply. The pipeline answers a sent turn directly; realtime needs a nudge.
+  const sendTextTurn = useCallback(
+    async (text: string): Promise<void> => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
 
-    if (activeSession?.adapter.status === "connected") {
-      return activeSession;
-    }
+      const current = sessionRef.current;
+      if (current?.adapter.status === "disconnected") {
+        clearDisconnectedSession(current);
+      }
 
-    if (startSessionPromiseRef.current) {
-      setStatus("Connecting before sharing the problem image...", "working");
-      return startSessionPromiseRef.current;
-    }
+      try {
+        const connected = sessionRef.current;
+        const activeSession =
+          connected && connected.adapter.status === "connected"
+            ? connected
+            : await startSession({ greet: false });
 
-    if (activeSession) {
-      cleanupSession(activeSession);
-      sessionRef.current = undefined;
-    }
+        activeSession.adapter.sendUserTurn({ image: null, text: trimmed });
 
-    setStatus("Starting with Echo before sharing the problem image...", "working");
-    return startSession({ greet: false });
-  }, [cleanupSession, setStatus, startSession]);
+        if (activeSession.descriptor.provider === "openai-realtime") {
+          activeSession.adapter.requestReply();
+        }
 
-  const getPayloadLimitBytes = useCallback(
-    () => sessionRef.current?.adapter.getPayloadLimitBytes(),
-    []
+        logEvent("Student text turn", trimmed);
+      } catch (error) {
+        if (error instanceof Error && error.message === startCancelledMessage) {
+          return;
+        }
+
+        setStatus(errorMessage(error, "Could not send your message."), "error");
+        logEvent("Text turn send failed", errorLogValue(error));
+      }
+    },
+    [clearDisconnectedSession, logEvent, setStatus, startSession]
   );
 
   useEffect(() => {
@@ -415,11 +429,10 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
 
   return {
     canRecordAudioTurn: Boolean(sessionRef.current?.adapter.supportsAudioTurns),
-    ensureSessionReadyForImage,
     finishAudioTurn,
-    getPayloadLimitBytes,
     isRecording,
     isRunning,
+    sendTextTurn,
     setStatus,
     startAudioTurn,
     startSession,

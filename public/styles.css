@@ -1605,12 +1605,7 @@ pre {
   color: var(--primary-ink);
 }
 
-.turn--child .mic {
-  font-size: 0.66rem;
-  opacity: 0.8;
-}
-
-/* the Anchor — focus card + voice bar */
+/* the Anchor — focus card + unified composer */
 .cc-anchor {
   display: flex;
   flex: 0 0 auto;
@@ -1760,57 +1755,187 @@ pre {
   color: var(--ink);
 }
 
-.voice-bar {
+/* the unified composer: type or talk, every turn */
+.cc-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+/* run controls (Hint / Park / End) ride above the field while a lesson is live */
+.run-controls {
   align-items: center;
   display: flex;
-  gap: 0.6rem;
+  gap: 0.45rem;
 }
 
-.talk {
+.run-spacer {
+  margin-inline-start: auto;
+}
+
+.mini-btn {
   align-items: center;
-  background: var(--primary);
+  background: transparent;
   border: 0;
-  border-radius: 11px;
-  color: var(--primary-ink);
+  border-radius: 9px;
+  color: var(--muted);
   cursor: pointer;
   display: inline-flex;
-  flex: 1 1 auto;
-  font-size: 0.98rem;
-  font-weight: 760;
+  font-size: 0.84rem;
+  font-weight: 720;
+  gap: 0.35rem;
+  min-height: 0;
+  padding: 0.4rem 0.65rem;
+  transition:
+    background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mini-btn svg {
+  block-size: 0.95rem;
+  inline-size: 0.95rem;
+}
+
+.mini-btn--hint {
+  color: var(--ink-soft);
+}
+
+.mini-btn:not(:disabled):hover {
+  background: var(--quiet-button);
+  color: var(--ink);
+  transform: none;
+}
+
+.composer {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px var(--shadow);
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.95rem;
+  transition:
+    border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.composer:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px oklch(0.82 0.083 148 / 0.3);
+}
+
+.composer--rec {
+  border-color: oklch(0.42 0.069 32 / 0.5);
+}
+
+/* the field overrides the global input chrome — it's bare inside the composer */
+.composer-input {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink);
+  flex: 1;
+  font-size: 1rem;
+  line-height: 1.5;
+  min-width: 0;
+  padding: 0.55rem 0;
+  width: auto;
+}
+
+.composer-input:hover {
+  background: transparent;
+}
+
+.composer-input:focus-visible {
+  outline: none;
+}
+
+.composer-input::placeholder {
+  color: var(--muted);
+}
+
+.composer-input:disabled {
+  background: transparent;
+  color: var(--disabled-ink);
+  cursor: not-allowed;
+}
+
+.listening {
+  align-items: center;
+  color: var(--ink-soft);
+  display: flex;
+  flex: 1;
+  font-size: 0.96rem;
+  font-weight: 720;
   gap: 0.6rem;
+}
+
+.round-btn {
+  align-items: center;
+  background: var(--quiet-button);
+  block-size: 2.9rem;
+  border: 0;
+  border-radius: 11px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  inline-size: 2.9rem;
   justify-content: center;
-  min-height: 3.1rem;
-  padding: 0 1rem;
+  min-height: 0;
+  padding: 0;
+  transition:
+    background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.talk .mic {
-  block-size: 1.05rem;
-  inline-size: 1.05rem;
+.round-btn svg {
+  block-size: 1.2rem;
+  inline-size: 1.2rem;
 }
 
-.talk:not(:disabled):hover {
-  background: var(--primary-hover);
+.round-btn:not(:disabled):hover {
+  background: var(--quiet-button-hover);
+  transform: none;
 }
 
-.talk:disabled {
+.round-btn:disabled {
   background: var(--disabled-bg);
   color: var(--disabled-ink);
   cursor: not-allowed;
 }
 
+.round-btn--send {
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+
+.round-btn--send:not(:disabled):hover {
+  background: var(--primary-hover);
+}
+
+.round-btn--rec {
+  background: var(--danger);
+  color: oklch(0.98 0.01 40);
+}
+
+.round-btn--rec:not(:disabled):hover {
+  background: oklch(0.38 0.072 32);
+}
+
 .wave {
   align-items: center;
-  block-size: 1rem;
+  block-size: 1.05rem;
   display: inline-flex;
   gap: 2px;
 }
 
 .wave span {
   animation: wave 1s ease-in-out infinite;
-  background: var(--primary-ink);
+  background: var(--primary);
   border-radius: 999px;
   inline-size: 3px;
-  opacity: 0.9;
 }
 
 .wave span:nth-child(1) { block-size: 35%; animation-delay: 0s; }
@@ -1822,31 +1947,6 @@ pre {
 @keyframes wave {
   0%, 100% { transform: scaleY(0.5); }
   50% { transform: scaleY(1); }
-}
-
-.vb-btn {
-  align-items: center;
-  background: var(--quiet-button);
-  border: 0;
-  border-radius: 11px;
-  color: var(--ink);
-  cursor: pointer;
-  display: inline-flex;
-  flex: 0 0 auto;
-  font-size: 0.88rem;
-  font-weight: 740;
-  gap: 0.4rem;
-  min-height: 3.1rem;
-  padding: 0 0.85rem;
-}
-
-.vb-btn svg {
-  block-size: 0.95rem;
-  inline-size: 0.95rem;
-}
-
-.vb-btn:not(:disabled):hover {
-  background: var(--quiet-button-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {

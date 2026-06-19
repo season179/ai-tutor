@@ -71,6 +71,7 @@ export function App() {
     finishAudioTurn,
     isRecording,
     isRunning,
+    sendTextTurn,
     setStatus,
     startAudioTurn,
     startSession,
@@ -220,7 +221,6 @@ export function App() {
           extractingQuestion={problemContextStep1.isExtractingQuestion}
           focusAsk={liveSession.focusAsk}
           gateStatus={liveSession.gateStatus}
-          hasPriorActivity={activeSessionHasPriorActivity}
           isRecording={isRecording}
           isRunning={isRunning}
           onFinishAudioTurn={() => {
@@ -231,6 +231,9 @@ export function App() {
           }}
           onPark={() => {
             logEvent("Step parked", { phase: liveSession.currentPhase });
+          }}
+          onSendText={(text) => {
+            void sendTextTurn(text);
           }}
           onStart={handleStart}
           onStartAudioTurn={startAudioTurn}

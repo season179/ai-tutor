@@ -45,12 +45,6 @@ export function SessionStream({ goalStatus, problemPin, turns, unknownTarget }: 
               <div className="bubble">
                 {turn.verdict ? <VerdictChip verdict={turn.verdict} /> : null}
                 {turn.text}
-                {turn.role === "child" ? (
-                  <span aria-hidden="true" className="mic">
-                    {" "}
-                    🎙
-                  </span>
-                ) : null}
               </div>
             </div>
           ))}

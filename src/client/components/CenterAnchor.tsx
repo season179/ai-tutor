@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 
 import type { ComprehensionGateStatus, SessionPhase } from "../../tutor-action.js";
-import { VoiceBar } from "./VoiceBar.js";
+import { UnifiedComposer } from "./UnifiedComposer.js";
 
 type CenterAnchorProps = {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -10,12 +10,12 @@ type CenterAnchorProps = {
   extractingQuestion: boolean;
   focusAsk: string | null;
   gateStatus: ComprehensionGateStatus | null;
-  hasPriorActivity: boolean;
   isRecording: boolean;
   isRunning: boolean;
   onFinishAudioTurn: () => void;
   onHint: () => void;
   onPark: () => void;
+  onSendText: (text: string) => void;
   onStart: () => void;
   onStartAudioTurn: () => void;
   onStop: () => void;
@@ -36,12 +36,12 @@ export function CenterAnchor({
   extractingQuestion,
   focusAsk,
   gateStatus,
-  hasPriorActivity,
   isRecording,
   isRunning,
   onFinishAudioTurn,
   onHint,
   onPark,
+  onSendText,
   onStart,
   onStartAudioTurn,
   onStop,
@@ -98,16 +98,16 @@ export function CenterAnchor({
         ) : null}
       </div>
 
-      <VoiceBar
+      <UnifiedComposer
         audioRef={audioRef}
         canRecordAudioTurn={canRecordAudioTurn}
         extractingQuestion={extractingQuestion}
-        hasPriorActivity={hasPriorActivity}
         isRecording={isRecording}
         isRunning={isRunning}
         onFinishAudioTurn={onFinishAudioTurn}
         onHint={inStepLoop ? onHint : undefined}
         onPark={inStepLoop ? onPark : undefined}
+        onSendText={onSendText}
         onStart={onStart}
         onStartAudioTurn={onStartAudioTurn}
         onStop={onStop}
@@ -186,14 +186,14 @@ function resolveAsk(
   }
 
   if (!isRunning) {
-    return "Ready to start? Tap to talk and say hi 👋";
+    return "Ready to start? Type hi, or tap the mic and say it 👋";
   }
 
   if (isRecording) {
     return "I'm listening — tell me what you're thinking.";
   }
 
-  return "Your turn — tap the mic and talk it out.";
+  return "Your turn — type your answer or tap the mic.";
 }
 
 function AidDots() {
