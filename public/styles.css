@@ -1332,10 +1332,10 @@ pre {
 }
 
 /* While the vision model reads the question from a photo, the focus card
-   becomes the one place that tells the learner work is in progress. */
+   becomes the one place that tells the learner work is in progress. Only the
+   border shifts; the box-shadow is inherited from the base .focus-card rule. */
 .focus-card[data-state="extracting"] {
   border-color: color-mix(in srgb, var(--line-strong) 70%, var(--focus) 30%);
-  box-shadow: 0 6px 18px -10px oklch(0.22 0.035 158 / 0.3), 0 2px 8px var(--shadow);
 }
 
 .focus-card[data-state="extracting"] .ask {
