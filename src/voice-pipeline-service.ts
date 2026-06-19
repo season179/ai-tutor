@@ -1,9 +1,18 @@
 import { HttpError, type JsonValue } from "./http-error.js";
 import { outputLanguageLabel } from "./answer-checker.js";
 import { deriveFinalAnswerCheck, deriveFirstCheckableStep, type ActiveStep } from "./active-step.js";
-import { checkGateRestatement } from "./gate-checker.js";
+import { checkGateStage, type GateCheckerVerdict } from "./gate-checker.js";
 import { gradeStudentTurn } from "./verifier.js";
-import { allowedMoves, allowedNextPhases, canTransition, forbiddenMoves } from "./phase-policy.js";
+import {
+  allowedMoves,
+  allowedNextPhases,
+  canTransition,
+  forbiddenMoves,
+  gateStageForStatus,
+  isGateReadStatus,
+  nextGateStatus,
+  type GateStage
+} from "./phase-policy.js";
 import { scrubComputedSolutionFromText, type ProblemContextRecord } from "./problem-context/problem-frame.js";
 import type { RequestContext } from "./request-context.js";
 import type { SessionStore } from "./session-store.js";
@@ -115,11 +124,16 @@ export async function handleVoicePipelineTurnWithStore(
   let gateStatus = detail.session.gateStatus;
   const problemContext = await store.getProblemContext(requestContext.ownerKey, request.sessionId);
 
-  let gateVerdict: Awaited<ReturnType<typeof checkGateRestatement>> | null = null;
-  if (shouldEvaluateGateRestatement(fromPhase, gateStatus, studentText, problemContext)) {
-    gateVerdict = await checkGateRestatement(problemContext!, studentText, env);
-    if (gateVerdict.accepted) {
-      gateStatus = "complete";
+  let gateVerdict: GateCheckerVerdict | null = null;
+  let gateStageChecked: GateStage | null = null;
+  if (shouldEvaluateGateStage(fromPhase, gateStatus, studentText, problemContext)) {
+    gateStageChecked = gateStageForStatus(gateStatus);
+    if (gateStageChecked) {
+      gateVerdict = await checkGateStage(gateStageChecked, problemContext, studentText, env);
+      if (gateVerdict.accepted) {
+        // Advance exactly one read; only the final restatement flips the gate to complete.
+        gateStatus = nextGateStatus(gateStatus);
+      }
     }
   }
 
@@ -210,11 +224,17 @@ export async function handleVoicePipelineTurnWithStore(
       text: studentText
     }
   });
-  if (gateVerdict) {
+  if (gateVerdict && gateStageChecked) {
+    await store.appendComprehensionCheck(requestContext.ownerKey, request.sessionId, {
+      accepted: gateVerdict.accepted,
+      checkKind: gateStageChecked,
+      studentResponse: studentText
+    });
     await store.appendEvent(requestContext.ownerKey, request.sessionId, {
       message: "Gate check",
       value: {
         accepted: gateVerdict.accepted,
+        checkKind: gateStageChecked,
         notes: gateVerdict.notes,
         studentText
       }
@@ -424,7 +444,7 @@ function mapStudentStatusToLegacy(status: StudentAssessmentStatus): StudentStatu
   }
 }
 
-function shouldEvaluateGateRestatement(
+function shouldEvaluateGateStage(
   phase: SessionPhase,
   gateStatus: ComprehensionGateStatus | null,
   studentText: string,
@@ -432,7 +452,7 @@ function shouldEvaluateGateRestatement(
 ): problemContext is ProblemContextRecord {
   return (
     phase === "frame_task" &&
-    gateStatus === "needs_restatement" &&
+    isGateReadStatus(gateStatus) &&
     Boolean(studentText.trim()) &&
     Boolean(problemContext?.unknownTarget?.trim())
   );
@@ -662,6 +682,22 @@ function createTutorPrompt(input: TutorTurnInput): string {
   );
 }
 
+/** Tells the model which of the Three Reads to run for the current gate status. */
+function gateReadNote(gateStatus: ComprehensionGateStatus | null): string {
+  switch (gateStageForStatus(gateStatus)) {
+    case "context":
+      return "\nThree Reads — READ 1 (context): use three_reads_1. Have the child read it through and say, in their own words, what the problem is about. Do not touch the numbers or the question yet.";
+    case "quantity":
+      return "\nThree Reads — READ 2 (quantities): use three_reads_2. Ask what the important numbers are and what each one means. Solving stays locked.";
+    case "target":
+      return "\nThree Reads — READ 3 (the question): use three_reads_3. Ask what the problem is asking them to find — the goal, never the answer.";
+    case "restatement":
+      return "\nThree Reads — FINAL: use restate_prompt. Ask them to restate, in their own words, what they must find. Solving unlocks only once they do.";
+    default:
+      return "";
+  }
+}
+
 function tutorActionInstructions(
   phase: SessionPhase,
   gateStatus: ComprehensionGateStatus | null,
@@ -671,8 +707,8 @@ function tutorActionInstructions(
   const allowed = allowedMoves(phase).join(", ");
   const forbidden = forbiddenMoves(phase).join(", ");
   const gateNote =
-    phase === "frame_task" && gateStatus !== "complete"
-      ? "\nThe comprehension gate is NOT complete — do not advance to planning or solving; help the child restate what we are finding."
+    phase === "frame_task" && isGateReadStatus(gateStatus)
+      ? gateReadNote(gateStatus)
       : gateStatus === "complete"
         ? "\nThe comprehension gate is complete — you may acknowledge their restatement and move on when ready."
         : "";

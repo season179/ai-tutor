@@ -3,6 +3,7 @@ import {
   maxSessionEvents,
   toTutorSessionSummary,
   type AppendSessionEventRequest,
+  type ComprehensionCheckRecord,
   type CreateTutorSessionRequest,
   type SessionEventRecord,
   type TutorSessionDetail,
@@ -12,7 +13,7 @@ import {
   type SessionReflectionRecord
 } from "./session-types.js";
 import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
-import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
 import {
   createProblemContextRecord,
@@ -69,6 +70,50 @@ export class D1SessionStore implements SessionStore {
 
     const row = await this.getOwnedSessionRow(ownerKey, sessionId);
     return row ? mapD1SessionRow(row) : null;
+  }
+
+  async appendComprehensionCheck(
+    ownerKey: string,
+    sessionId: string,
+    request: AppendComprehensionCheckRequest
+  ): Promise<void> {
+    const session = await this.getOwnedSessionRow(ownerKey, sessionId);
+    if (!session) {
+      throw sessionStoreNotFoundError();
+    }
+
+    await this.db
+      .prepare(
+        `INSERT INTO comprehension_checks (session_id, check_kind, student_response, accepted, created_at)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .bind(sessionId, request.checkKind, request.studentResponse, request.accepted ? 1 : 0, nowIso())
+      .run();
+  }
+
+  async listComprehensionChecks(ownerKey: string, sessionId: string): Promise<ComprehensionCheckRecord[]> {
+    const session = await this.getOwnedSessionRow(ownerKey, sessionId);
+    if (!session) {
+      return [];
+    }
+
+    const result = await this.db
+      .prepare(
+        `SELECT session_id, check_kind, student_response, accepted, created_at
+         FROM comprehension_checks
+         WHERE session_id = ?
+         ORDER BY created_at ASC, id ASC`
+      )
+      .bind(sessionId)
+      .all();
+
+    return d1Rows(result).map((row) => ({
+      accepted: Number(row.accepted) === 1,
+      checkKind: String(row.check_kind),
+      createdAt: String(row.created_at),
+      sessionId: String(row.session_id),
+      studentResponse: String(row.student_response)
+    }));
   }
 
   async appendEvent(

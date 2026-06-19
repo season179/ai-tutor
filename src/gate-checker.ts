@@ -1,24 +1,37 @@
 import { HttpError, type JsonValue } from "./http-error.js";
 import { extractOutputText, fetchOpenAiJson, requireOpenAiApiKey } from "./openai-responses.js";
+import type { GateStage } from "./phase-policy.js";
+import { scrubComputedSolutionFromText, type ProblemFrame } from "./problem-context/problem-frame.js";
 import { isJsonObject } from "./schema-parser.js";
-import type { ProblemFrame } from "./problem-context/problem-frame.js";
 
 export const defaultGateCheckerModel = "gpt-5.5";
 
-const gateCheckerInstructions = `You are a narrow comprehension-gate checker for a children's homework tutor.
+// The "comprehension-gate checker" marker stays in the preamble: the voice pipeline and its
+// tests identify a gate-check request by this phrase, distinct from the tutor/verifier calls.
+const gateCheckerPreamble = `You are a narrow comprehension-gate checker for a children's homework tutor. You GRADE one small reading step of the Three Reads; you never speak to the child.`;
 
-The child must restate what the problem is asking them to FIND — in their own words — before solving is allowed.
+const gateStageRubrics: Record<GateStage, string> = {
+  context: `This is READ 1 (context). The child should show they have read the problem and can say what it is ABOUT — the situation or story, in their own words.
+Accept any reasonable paraphrase of the scenario.
+Reject if they only ask for the answer, state a number, or show no sign of having read it.`,
+  quantity: `This is READ 2 (quantities). The child should pick out the KEY NUMBERS in the problem and say what each one refers to (and how they relate).
+Accept if they name the relevant given quantities correctly, even loosely.
+Reject if they miss the numbers, invent ones, or only ask for the answer.`,
+  target: `This is READ 3 (the question). The child should identify WHAT THE QUESTION ASKS them to find — the unknown — without solving it.
+Accept a paraphrase or a blank/question form of the unknown target.
+Reject a final numeric answer, a solving step, or "just tell me".`,
+  restatement: `This is the FULL restatement. The child should restate, in their own words, what the problem is asking them to FIND, before solving is allowed.
+Accept paraphrases, child language, and blank/question forms ("how many each friend gets", "we need to find ___").
+Reject if they only ask you to solve it, state a final numeric answer, or describe unrelated content.`
+};
 
-Accept when:
-- They identify the same unknown target as the problem frame (paraphrases and child language are fine).
-- They use a blank or question form ("how many stickers each friend gets", "we need to find ___").
+function gateStageInstructions(stage: GateStage): string {
+  return `${gateCheckerPreamble}
 
-Reject when:
-- They only ask you to solve it or give the answer ("just tell me", "what is it").
-- They state a final numeric answer instead of the goal.
-- They describe unrelated content with no sign they know what to find.
+${gateStageRubrics[stage]}
 
 Return JSON only. Be generous with age-appropriate paraphrases; only reject clear misses.`;
+}
 
 const gateCheckerJsonSchema = {
   additionalProperties: false,
@@ -53,7 +66,13 @@ export function createGateCheckerOptions(env: GateCheckerEnv): GateCheckerOption
   };
 }
 
-export async function checkGateRestatement(
+/**
+ * Grades one read of the Three Reads gate. Each stage has its own rubric, but all share the
+ * frame and the strict-JSON verdict shape. The frame is scrubbed of any worked solution before
+ * it reaches the model.
+ */
+export async function checkGateStage(
+  stage: GateStage,
   frame: ProblemFrame,
   studentText: string,
   env: GateCheckerEnv
@@ -81,10 +100,13 @@ export async function checkGateRestatement(
                 {
                   problemFrame: {
                     givens: frame.quantities,
-                    relationships: frame.relationships,
-                    unknownTarget: frame.unknownTarget,
-                    visibleQuestion: frame.visibleQuestion
+                    relationships: frame.relationships.map((relationship) =>
+                      scrubComputedSolutionFromText(relationship)
+                    ),
+                    unknownTarget: scrubComputedSolutionFromText(frame.unknownTarget ?? "") || null,
+                    visibleQuestion: scrubComputedSolutionFromText(frame.visibleQuestion)
                   },
+                  read: stage,
                   studentText: trimmed
                 },
                 null,
@@ -96,7 +118,7 @@ export async function checkGateRestatement(
           role: "user"
         }
       ],
-      instructions: gateCheckerInstructions,
+      instructions: gateStageInstructions(stage),
       model: options.model,
       text: {
         format: {
@@ -128,6 +150,15 @@ export async function checkGateRestatement(
       error instanceof Error ? error.message : String(error)
     );
   }
+}
+
+/** Convenience wrapper for the final restatement read. */
+export function checkGateRestatement(
+  frame: ProblemFrame,
+  studentText: string,
+  env: GateCheckerEnv
+): Promise<GateCheckerVerdict> {
+  return checkGateStage("restatement", frame, studentText, env);
 }
 
 function parseGateCheckerVerdict(value: JsonValue): GateCheckerVerdict {

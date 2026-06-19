@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { allowedMoves, canTransition, forbiddenMoves, initialPhase, isMoveLegal } from "../dist/phase-policy.js";
+import {
+  allowedMoves,
+  canTransition,
+  comprehensionGateReadStatuses,
+  forbiddenMoves,
+  gateStageForStatus,
+  initialGateStatus,
+  initialPhase,
+  isGateReadStatus,
+  isMoveLegal,
+  nextGateStatus
+} from "../dist/phase-policy.js";
 
 test("the comprehension gate allows only the Three Reads and restate moves", () => {
   const moves = allowedMoves("frame_task");
@@ -30,6 +41,44 @@ test("solve and final_answer are forbidden everywhere; the gate forbids more", (
 test("safety moves are legal in any phase", () => {
   assert.equal(isMoveLegal("frame_task", "safety_boundary"), true);
   assert.equal(isMoveLegal("step_loop", "reset"), true);
+});
+
+test("the Three Reads gate starts at the first read and lists the reads in order", () => {
+  assert.equal(initialGateStatus, "needs_context_read");
+  assert.deepEqual(comprehensionGateReadStatuses, [
+    "needs_context_read",
+    "needs_quantity_read",
+    "needs_target_read",
+    "needs_restatement"
+  ]);
+});
+
+test("isGateReadStatus recognizes the four reads but not complete or null", () => {
+  assert.equal(isGateReadStatus("needs_context_read"), true);
+  assert.equal(isGateReadStatus("needs_restatement"), true);
+  assert.equal(isGateReadStatus("complete"), false);
+  assert.equal(isGateReadStatus(null), false);
+  assert.equal(isGateReadStatus(undefined), false);
+});
+
+test("gateStageForStatus maps each read to its rubric stage", () => {
+  assert.equal(gateStageForStatus("needs_context_read"), "context");
+  assert.equal(gateStageForStatus("needs_quantity_read"), "quantity");
+  assert.equal(gateStageForStatus("needs_target_read"), "target");
+  assert.equal(gateStageForStatus("needs_restatement"), "restatement");
+  assert.equal(gateStageForStatus("complete"), null);
+  assert.equal(gateStageForStatus(null), null);
+});
+
+test("nextGateStatus advances one read at a time and completes after the restatement", () => {
+  // The reads can never be skipped: each accept moves forward exactly one step.
+  assert.equal(nextGateStatus("needs_context_read"), "needs_quantity_read");
+  assert.equal(nextGateStatus("needs_quantity_read"), "needs_target_read");
+  assert.equal(nextGateStatus("needs_target_read"), "needs_restatement");
+  assert.equal(nextGateStatus("needs_restatement"), "complete");
+  // A non-read status has nowhere further to advance.
+  assert.equal(nextGateStatus("complete"), "complete");
+  assert.equal(nextGateStatus(null), null);
 });
 
 test("phase transitions follow the workflow graph", () => {

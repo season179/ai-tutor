@@ -1,5 +1,6 @@
 import type {
   AppendSessionEventRequest,
+  ComprehensionCheckRecord,
   CreateTutorSessionRequest,
   SessionEventRecord,
   SessionReflectionRecord,
@@ -35,6 +36,12 @@ export type SaveReflectionRequest = {
   sessionId: string;
 };
 
+export type AppendComprehensionCheckRequest = {
+  accepted: boolean;
+  checkKind: string;
+  studentResponse: string;
+};
+
 export type SessionStore = {
   /**
    * Advance the authoritative phase state, guarded by an optimistic lock on the
@@ -47,8 +54,14 @@ export type SessionStore = {
     expectedPhase: SessionPhase,
     advance: SessionPhaseAdvance
   ): Promise<TutorSessionRecord | null>;
+  appendComprehensionCheck(
+    ownerKey: string,
+    sessionId: string,
+    request: AppendComprehensionCheckRequest
+  ): Promise<void>;
   appendEvent(ownerKey: string, sessionId: string, request: AppendSessionEventRequest): Promise<SessionEventRecord>;
   createSession(ownerKey: string, request?: CreateTutorSessionRequest): Promise<TutorSessionRecord>;
+  listComprehensionChecks(ownerKey: string, sessionId: string): Promise<ComprehensionCheckRecord[]>;
   getProblemContext(ownerKey: string, sessionId: string): Promise<ProblemContextRecord | null>;
   getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null>;
   listSessions(ownerKey: string): Promise<TutorSessionSummary[]>;

@@ -1,5 +1,6 @@
 import type {
   AppendSessionEventRequest,
+  ComprehensionCheckRecord,
   CreateTutorSessionRequest,
   SessionEventRecord,
   SessionImageMeta,
@@ -15,7 +16,7 @@ import type { ExtractionOutcome } from "./problem-context/problem-context-types.
 import { problemTypes, type ProblemContextRecord, type ProblemFrame, type ProblemQuantity, type ProblemType } from "./problem-context/problem-frame.js";
 import { isJsonObject } from "./schema-parser.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import { initialPhase } from "./phase-policy.js";
 import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
@@ -272,6 +273,7 @@ export class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
   private readonly problemContexts = new Map<string, ProblemContextRecord>();
   private readonly reflections = new Map<string, StoredReflection>();
+  private readonly comprehensionChecks = new Map<string, ComprehensionCheckRecord[]>();
   private nextEventId = 1;
 
   async advanceSessionPhase(
@@ -292,6 +294,31 @@ export class MemorySessionStore implements SessionStore {
     session.updatedAt = nowIso();
 
     return this.toRecord(session);
+  }
+
+  async appendComprehensionCheck(
+    ownerKey: string,
+    sessionId: string,
+    request: AppendComprehensionCheckRequest
+  ): Promise<void> {
+    this.requireOwnedSession(ownerKey, sessionId);
+    const checks = this.comprehensionChecks.get(sessionId) ?? [];
+    checks.push({
+      accepted: request.accepted,
+      checkKind: request.checkKind,
+      createdAt: nowIso(),
+      sessionId,
+      studentResponse: request.studentResponse
+    });
+    this.comprehensionChecks.set(sessionId, checks);
+  }
+
+  async listComprehensionChecks(ownerKey: string, sessionId: string): Promise<ComprehensionCheckRecord[]> {
+    if (!this.getOwnedSession(ownerKey, sessionId)) {
+      return [];
+    }
+
+    return [...(this.comprehensionChecks.get(sessionId) ?? [])];
   }
 
   async appendEvent(

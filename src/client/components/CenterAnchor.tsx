@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 
-import type { SessionPhase } from "../../tutor-action.js";
+import type { ComprehensionGateStatus, SessionPhase } from "../../tutor-action.js";
 import { VoiceBar } from "./VoiceBar.js";
 
 type CenterAnchorProps = {
@@ -8,6 +8,7 @@ type CenterAnchorProps = {
   canRecordAudioTurn: boolean;
   currentPhase: SessionPhase;
   focusAsk: string | null;
+  gateStatus: ComprehensionGateStatus | null;
   hasPriorActivity: boolean;
   isRecording: boolean;
   isRunning: boolean;
@@ -32,6 +33,7 @@ export function CenterAnchor({
   canRecordAudioTurn,
   currentPhase,
   focusAsk,
+  gateStatus,
   hasPriorActivity,
   isRecording,
   isRunning,
@@ -49,17 +51,21 @@ export function CenterAnchor({
   const inStepLoop = currentPhase === "step_loop";
   const inAnswerCheck = currentPhase === "answer_check";
   const inWrap = currentPhase === "wrap_up" || currentPhase === "memory_write";
+  // During the gate, the focus card shows which of the Three Reads the child is on.
+  const readStep = currentPhase === "frame_task" ? gateReadLabel(gateStatus) : null;
 
   return (
     <div className="cc-anchor">
       <div className="focus-card">
         <div className="focus-kicker">
-          {kickerLabel(currentPhase, Boolean(focusAsk))}
+          {readStep ? readStep.kicker : kickerLabel(currentPhase, Boolean(focusAsk))}
           {outputLanguageLabel && inAnswerCheck ? (
             <span className="lang-chip">{outputLanguageLabel}</span>
           ) : null}
         </div>
-        <div className="ask">{resolveAsk(focusAsk, inWrap, isRunning, isRecording)}</div>
+        <div className="ask">
+          {readStep ? readStep.prompt : resolveAsk(focusAsk, inWrap, isRunning, isRecording)}
+        </div>
         {pendingHint && inStepLoop ? (
           <div className="aid aid--hint">
             <HintBulb />
@@ -90,6 +96,24 @@ export function CenterAnchor({
       />
     </div>
   );
+}
+
+/** The Three Reads progress label shown on the focus card during the comprehension gate. */
+function gateReadLabel(
+  gateStatus: ComprehensionGateStatus | null
+): { kicker: string; prompt: string } | null {
+  switch (gateStatus) {
+    case "needs_context_read":
+      return { kicker: "Read 1 of 3", prompt: "Read it through — what's this problem about?" };
+    case "needs_quantity_read":
+      return { kicker: "Read 2 of 3", prompt: "What are the important numbers, and what do they mean?" };
+    case "needs_target_read":
+      return { kicker: "Read 3 of 3", prompt: "What is the problem asking you to find?" };
+    case "needs_restatement":
+      return { kicker: "Final read", prompt: "Say it back in your own words — what are we finding?" };
+    default:
+      return null;
+  }
 }
 
 function kickerLabel(phase: SessionPhase, hasFocusAsk: boolean): string {

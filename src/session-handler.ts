@@ -1,4 +1,5 @@
 import { HttpError, sessionNotFoundHttpError } from "./http-error.js";
+import { initialGateStatus } from "./phase-policy.js";
 import { problemFrameFromConfirmedPrompt } from "./problem-context/problem-frame.js";
 import {
   parseAppendSessionEventRequest,
@@ -73,7 +74,7 @@ export async function updateSession(
     });
 
     if (existing.session.gateStatus !== "complete") {
-      request.gateStatus = "needs_restatement";
+      request.gateStatus = initialGateStatus;
     }
   }
 

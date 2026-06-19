@@ -61,6 +61,15 @@ export type SessionReflectionRecord = {
   updatedAt: string;
 };
 
+/** One Three Reads comprehension check — the per-read audit trail for the gate. */
+export type ComprehensionCheckRecord = {
+  accepted: boolean;
+  checkKind: string;
+  createdAt: string;
+  sessionId: string;
+  studentResponse: string;
+};
+
 export type TutorSessionDetail = {
   events: SessionEventRecord[];
   problemContext: ProblemContextRecord | null;

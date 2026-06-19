@@ -67,6 +67,58 @@ export function isGateComplete(gateStatus: ComprehensionGateStatus | null | unde
   return gateStatus === "complete";
 }
 
+/**
+ * The Three Reads progression — the comprehension-gate read statuses in order. Each is a
+ * distinct reading check the child must pass; a child can't skip ahead. `restatement` is
+ * the final read, after which the gate completes.
+ */
+export const comprehensionGateReadStatuses = [
+  "needs_context_read", // Read 1 — what is the problem about?
+  "needs_quantity_read", // Read 2 — what are the numbers and what do they mean?
+  "needs_target_read", // Read 3 — what is it asking us to find?
+  "needs_restatement" // Final — restate the goal in your own words
+] as const satisfies readonly ComprehensionGateStatus[];
+
+type GateReadStatus = (typeof comprehensionGateReadStatuses)[number];
+
+/** The reading task a gate read status corresponds to. */
+export type GateStage = "context" | "quantity" | "target" | "restatement";
+
+const gateStageByStatus: Record<GateReadStatus, GateStage> = {
+  needs_context_read: "context",
+  needs_quantity_read: "quantity",
+  needs_target_read: "target",
+  needs_restatement: "restatement"
+};
+
+/** The first gate status once a question with an unknown target has been framed. */
+export const initialGateStatus: ComprehensionGateStatus = comprehensionGateReadStatuses[0];
+
+export function isGateReadStatus(status: ComprehensionGateStatus | null | undefined): status is GateReadStatus {
+  return comprehensionGateReadStatuses.some((candidate) => candidate === status);
+}
+
+/** The read being evaluated for a gate status, or null when the gate isn't on a read. */
+export function gateStageForStatus(status: ComprehensionGateStatus | null | undefined): GateStage | null {
+  return isGateReadStatus(status) ? gateStageByStatus[status] : null;
+}
+
+/**
+ * The next gate status when the current read is accepted. Reads advance in their fixed
+ * order and the final restatement completes the gate; any non-read status is returned
+ * unchanged. This is the one place the gate moves forward, so a read can never be skipped.
+ */
+export function nextGateStatus(
+  status: ComprehensionGateStatus | null | undefined
+): ComprehensionGateStatus | null {
+  const index = comprehensionGateReadStatuses.findIndex((candidate) => candidate === status);
+  if (index < 0) {
+    return status ?? null;
+  }
+
+  return comprehensionGateReadStatuses[index + 1] ?? "complete";
+}
+
 export function canTransition(
   from: SessionPhase,
   to: SessionPhase,

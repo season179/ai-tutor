@@ -240,6 +240,7 @@ export function App() {
           canRecordAudioTurn={canRecordAudioTurn}
           currentPhase={liveSession.currentPhase}
           focusAsk={liveSession.focusAsk}
+          gateStatus={liveSession.gateStatus}
           hasPriorActivity={activeSessionHasPriorActivity}
           isRecording={isRecording}
           isRunning={isRunning}

@@ -1,4 +1,5 @@
 import { HttpError, sessionNotFoundHttpError } from "../http-error.js";
+import { initialGateStatus } from "../phase-policy.js";
 import type { RequestContext } from "../request-context.js";
 import type { SessionStore } from "../session-store.js";
 import {
@@ -77,7 +78,7 @@ export async function handleExtractQuestionRequest(
   await store.updateSession(context.ownerKey, request.sessionId, {
     extractionNotes: extraction.notes,
     extractionOutcome: extraction.outcome,
-    gateStatus: extraction.frame.unknownTarget ? "needs_restatement" : null,
+    gateStatus: extraction.frame.unknownTarget ? initialGateStatus : null,
     imageObjectKey: request.objectKey,
     imagePrompt: extraction.question || null,
     promptConfirmed: false

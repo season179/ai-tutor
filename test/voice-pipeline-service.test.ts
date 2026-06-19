@@ -540,6 +540,141 @@ test("skips the gate-checker once the gate is already complete", async () => {
   }
 });
 
+async function seedThreeReadsSession(store: MemorySessionStore, sessionId: string): Promise<void> {
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId
+  });
+  await store.advanceSessionPhase(ownerKey, sessionId, "session_open", {
+    activeStep: null,
+    currentPhase: "frame_task",
+    gateStatus: "needs_context_read",
+    supportLevel: 0
+  });
+}
+
+test("requires all three reads plus a restatement before solving unlocks", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Three Reads walk" });
+  await seedThreeReadsSession(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  // The tutor tries to move on to planning every single turn; only the gate FSM,
+  // not the model, decides when that's actually allowed.
+  const push = {
+    move: "restate_prompt",
+    nextPhase: "plan_first_step",
+    spokenUtterance: "Tell me more about this problem."
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init)) {
+        return Response.json({ output_text: JSON.stringify({ accepted: true, notes: null }) });
+      }
+
+      return Response.json({ output_text: JSON.stringify(push) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  async function takeTurn(text: string) {
+    return handleVoicePipelineTurnWithStore({ sessionId: session.id, text }, env, store, context);
+  }
+
+  try {
+    // Read 1 (context) accepted → advances exactly one read; solving stays locked.
+    const r1 = await takeTurn("It's about four friends sharing some stickers.");
+    assert.equal(r1.session.currentPhase, "frame_task");
+    assert.equal(r1.session.gateStatus, "needs_quantity_read");
+
+    // Read 2 (quantities) accepted → next read; still locked in frame_task.
+    const r2 = await takeTurn("There are 24 stickers and 4 friends.");
+    assert.equal(r2.session.currentPhase, "frame_task");
+    assert.equal(r2.session.gateStatus, "needs_target_read");
+
+    // Read 3 (the question) accepted → final restatement read; still locked.
+    const r3 = await takeTurn("It wants how many stickers each friend gets.");
+    assert.equal(r3.session.currentPhase, "frame_task");
+    assert.equal(r3.session.gateStatus, "needs_restatement");
+
+    // Restatement accepted → gate completes and only now does planning unlock.
+    const r4 = await takeTurn("We need to find how many stickers each friend gets.");
+    assert.equal(r4.session.currentPhase, "plan_first_step");
+    assert.equal(r4.session.gateStatus, "complete");
+
+    // One audited row per read, in order, with the stage recorded as the check kind.
+    const checks = await store.listComprehensionChecks(ownerKey, session.id);
+    assert.deepEqual(
+      checks.map((check) => check.checkKind),
+      ["context", "quantity", "target", "restatement"]
+    );
+    assert.ok(checks.every((check) => check.accepted));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a rejected read holds the gate on the same stage", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Read held" });
+  await seedThreeReadsSession(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  const probe = {
+    move: "three_reads_1",
+    nextPhase: "frame_task",
+    spokenUtterance: "Read it once more — what's happening in this story?"
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init)) {
+        return Response.json({ output_text: JSON.stringify({ accepted: false, notes: "Just asked for the answer." }) });
+      }
+
+      return Response.json({ output_text: JSON.stringify(probe) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "Just tell me the answer." },
+      env,
+      store,
+      context
+    );
+
+    assert.equal(response.session.currentPhase, "frame_task");
+    assert.equal(response.session.gateStatus, "needs_context_read");
+
+    const checks = await store.listComprehensionChecks(ownerKey, session.id);
+    assert.equal(checks.length, 1);
+    assert.equal(checks[0]?.checkKind, "context");
+    assert.equal(checks[0]?.accepted, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 async function seedStepLoopSession(store: MemorySessionStore, sessionId: string): Promise<void> {
   await store.saveProblemContext(ownerKey, {
     extractionConfidence: "high",

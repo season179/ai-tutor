@@ -140,6 +140,47 @@ test("advanceSessionPhase refuses to advance when the expected phase is stale", 
   assert.equal(detail?.session.currentPhase, "session_open");
 });
 
+test("MemorySessionStore records and lists comprehension checks in order", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const session = await store.createSession(ownerKey);
+
+  await store.appendComprehensionCheck(ownerKey, session.id, {
+    accepted: false,
+    checkKind: "context",
+    studentResponse: "It's about sharing stickers."
+  });
+  await store.appendComprehensionCheck(ownerKey, session.id, {
+    accepted: true,
+    checkKind: "context",
+    studentResponse: "Four friends share 24 stickers."
+  });
+
+  const checks = await store.listComprehensionChecks(ownerKey, session.id);
+  assert.equal(checks.length, 2);
+  assert.equal(checks[0]?.checkKind, "context");
+  assert.equal(checks[0]?.accepted, false);
+  assert.equal(checks[1]?.accepted, true);
+  assert.equal(checks[1]?.sessionId, session.id);
+  assert.ok(checks[0]?.createdAt);
+});
+
+test("comprehension checks are scoped to their session", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const sessionA = await store.createSession(ownerKey);
+  const sessionB = await store.createSession(ownerKey);
+
+  await store.appendComprehensionCheck(ownerKey, sessionA.id, {
+    accepted: true,
+    checkKind: "target",
+    studentResponse: "Find how many each friend gets."
+  });
+
+  assert.equal((await store.listComprehensionChecks(ownerKey, sessionA.id)).length, 1);
+  assert.equal((await store.listComprehensionChecks(ownerKey, sessionB.id)).length, 0);
+});
+
 test("mapD1SessionRow normalizes optional image columns", () => {
   const session = mapD1SessionRow({
     created_at: "2026-06-17T01:02:03.000Z",
@@ -212,7 +253,7 @@ test("confirming a typed prompt seeds problem context and gate status", async ()
   );
 
   assert.equal(updated.promptConfirmed, true);
-  assert.equal(updated.gateStatus, "needs_restatement");
+  assert.equal(updated.gateStatus, "needs_context_read");
 
   const detail = await store.getSession(ownerKey, session.id);
   assert.equal(detail?.problemContext?.unknownTarget, "How many stickers does each friend get?");

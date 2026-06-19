@@ -157,7 +157,7 @@ test("handleExtractQuestionRequest sends an R2 URL to OpenAI and parses the ques
     assert.equal(updated?.session.imagePrompt, "What is the value of x?");
     assert.equal(updated?.session.extractionOutcome, "extracted");
     assert.equal(updated?.session.promptConfirmed, false);
-    assert.equal(updated?.session.gateStatus, "needs_restatement");
+    assert.equal(updated?.session.gateStatus, "needs_context_read");
     assert.equal(updated?.problemContext?.unknownTarget, "the value of x");
 
     const extractedEvent = updated?.events.find((event) => event.message === "Question extracted");
