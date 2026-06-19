@@ -8,8 +8,8 @@ import {
   shouldArmHintTimer
 } from "../src/session-runtime/hint-timer.ts";
 
-test("hintWaitMs is one minute", () => {
-  assert.equal(hintWaitMs, 60_000);
+test("hintWaitMs matches the spec's ~2 minute struggle window", () => {
+  assert.equal(hintWaitMs, 120_000);
 });
 
 test("shouldArmHintTimer only in step_loop", () => {

@@ -16,7 +16,7 @@ import type { ExtractionOutcome } from "./problem-context/problem-context-types.
 import { problemTypes, type ProblemContextRecord, type ProblemFrame, type ProblemQuantity, type ProblemType } from "./problem-context/problem-frame.js";
 import { isJsonObject } from "./schema-parser.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type CommitTurnRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import { initialPhase } from "./phase-policy.js";
 import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
@@ -294,6 +294,41 @@ export class MemorySessionStore implements SessionStore {
     session.updatedAt = nowIso();
 
     return this.toRecord(session);
+  }
+
+  async commitTurn(
+    ownerKey: string,
+    sessionId: string,
+    request: CommitTurnRequest
+  ): Promise<TutorSessionRecord | null> {
+    // The in-memory store runs single-threaded, so the optimistic-lock check plus the
+    // dependent writes are already effectively atomic; if the advance loses the race we
+    // bail before writing anything, mirroring the D1 batch's all-or-nothing guarantee.
+    const advanced = await this.advanceSessionPhase(ownerKey, sessionId, request.expectedPhase, request.advance);
+    if (!advanced) {
+      return null;
+    }
+
+    if (request.activate) {
+      await this.updateSession(ownerKey, sessionId, { status: "active" });
+    }
+
+    for (const event of request.events) {
+      await this.appendEvent(ownerKey, sessionId, event);
+    }
+
+    if (request.comprehensionCheck) {
+      await this.appendComprehensionCheck(ownerKey, sessionId, request.comprehensionCheck);
+    }
+
+    if (request.reflection) {
+      await this.saveReflection(ownerKey, {
+        reflectionText: request.reflection.reflectionText,
+        sessionId
+      });
+    }
+
+    return advanced;
   }
 
   async appendComprehensionCheck(

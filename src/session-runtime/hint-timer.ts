@@ -1,5 +1,9 @@
-/** Idle wait before a gentle hint nudge in the step loop (M5). */
-export const hintWaitMs = 60_000;
+/**
+ * Idle wait before a gentle hint nudge in the step loop (M5). Set to ~2 minutes per the
+ * pedagogy rule (docs/tutoring-workflow.md): a child shouldn't struggle alone longer than
+ * that, but the struggle before the nudge should be productive, not cut short.
+ */
+export const hintWaitMs = 120_000;
 
 export const hintTimerEventMessage = "Hint timer";
 

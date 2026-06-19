@@ -20,6 +20,7 @@ import {
   studentTurnEventMessage,
   toPublicActiveStep,
   tutorTurnEventMessage,
+  type AppendSessionEventRequest,
   type TutorSessionDetail
 } from "./session-types.js";
 import type { StepVerifierVerdict } from "./step-verifier.js";
@@ -201,37 +202,19 @@ export async function handleVoicePipelineTurnWithStore(
     tutorText: action.spokenUtterance
   });
 
-  // Optimistic lock on the phase we read. A null result means a concurrent turn already
-  // moved the session off `fromPhase`, so this turn is stale: bail rather than recording a
-  // transition that never happened or speaking over the turn that won the race.
-  const advanced = await store.advanceSessionPhase(requestContext.ownerKey, request.sessionId, fromPhase, {
-    activeStep,
-    currentPhase: toPhase,
-    gateStatus,
-    supportLevel
-  });
-  if (!advanced) {
-    throw new HttpError(409, "This session was advanced by another turn. Please retry.");
-  }
-  // Only the first turn flips draft → active; skip the write once it already is.
-  if (detail.session.status !== "active") {
-    await store.updateSession(requestContext.ownerKey, request.sessionId, { status: "active" });
-  }
-  await store.appendEvent(requestContext.ownerKey, request.sessionId, {
-    message: request.image && !request.audio ? "Problem image submitted" : studentTurnEventMessage,
-    value: {
-      hasAudio: Boolean(request.audio),
-      hasImage: Boolean(request.image),
-      text: studentText
+  // Everything this turn writes, assembled in log order so it can be committed as one unit.
+  const turnEvents: AppendSessionEventRequest[] = [
+    {
+      message: request.image && !request.audio ? "Problem image submitted" : studentTurnEventMessage,
+      value: {
+        hasAudio: Boolean(request.audio),
+        hasImage: Boolean(request.image),
+        text: studentText
+      }
     }
-  });
+  ];
   if (gateVerdict && gateStageChecked) {
-    await store.appendComprehensionCheck(requestContext.ownerKey, request.sessionId, {
-      accepted: gateVerdict.accepted,
-      checkKind: gateStageChecked,
-      studentResponse: studentText
-    });
-    await store.appendEvent(requestContext.ownerKey, request.sessionId, {
+    turnEvents.push({
       message: "Gate check",
       value: {
         accepted: gateVerdict.accepted,
@@ -242,7 +225,7 @@ export async function handleVoicePipelineTurnWithStore(
     });
   }
   if (checkerVerdict) {
-    await store.appendEvent(requestContext.ownerKey, request.sessionId, {
+    turnEvents.push({
       message: fromPhase === "answer_check" ? "Answer check" : "Step verify",
       value: {
         chip: checkerVerdict.chip,
@@ -257,13 +240,7 @@ export async function handleVoicePipelineTurnWithStore(
       }
     });
   }
-  if (fromPhase === "memory_write" && studentText.trim()) {
-    await store.saveReflection(requestContext.ownerKey, {
-      reflectionText: studentText,
-      sessionId: request.sessionId
-    });
-  }
-  await store.appendEvent(requestContext.ownerKey, request.sessionId, {
+  turnEvents.push({
     message: tutorTurnEventMessage,
     value: {
       // Stamp the contract version so a persisted turn can be read back against the
@@ -288,6 +265,25 @@ export async function handleVoicePipelineTurnWithStore(
             }
     }
   });
+
+  // Commit the advance, the draft→active flip, the events, the comprehension check, and any
+  // reflection as one atomic unit, guarded by an optimistic lock on the phase we read. A null
+  // result means a concurrent turn already moved the session off `fromPhase`, so this turn is
+  // stale and nothing was written: bail rather than speaking over the turn that won the race.
+  const committed = await store.commitTurn(requestContext.ownerKey, request.sessionId, {
+    activate: detail.session.status !== "active",
+    advance: { activeStep, currentPhase: toPhase, gateStatus, supportLevel },
+    comprehensionCheck:
+      gateVerdict && gateStageChecked
+        ? { accepted: gateVerdict.accepted, checkKind: gateStageChecked, studentResponse: studentText }
+        : null,
+    events: turnEvents,
+    expectedPhase: fromPhase,
+    reflection: fromPhase === "memory_write" && studentText.trim() ? { reflectionText: studentText } : null
+  });
+  if (!committed) {
+    throw new HttpError(409, "This session was advanced by another turn. Please retry.");
+  }
 
   return response;
 }

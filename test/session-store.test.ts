@@ -181,6 +181,64 @@ test("comprehension checks are scoped to their session", async () => {
   assert.equal((await store.listComprehensionChecks(ownerKey, sessionB.id)).length, 0);
 });
 
+test("commitTurn applies the advance, events, check, and reflection as one unit", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const session = await store.createSession(ownerKey);
+  await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
+    activeStep: null,
+    currentPhase: "memory_write",
+    gateStatus: "complete",
+    supportLevel: 0
+  });
+
+  const committed = await store.commitTurn(ownerKey, session.id, {
+    activate: true,
+    advance: { activeStep: null, currentPhase: "wrap_up", gateStatus: "complete", supportLevel: 0 },
+    comprehensionCheck: { accepted: true, checkKind: "restatement", studentResponse: "We find each share." },
+    events: [
+      { message: "Student turn", value: { text: "Drawing helped me." } },
+      { message: "Tutor turn", value: { text: "You did it!" } }
+    ],
+    expectedPhase: "memory_write",
+    reflection: { reflectionText: "Drawing one per friend helped." }
+  });
+
+  assert.ok(committed);
+  assert.equal(committed?.currentPhase, "wrap_up");
+
+  const detail = await store.getSession(ownerKey, session.id);
+  assert.equal(detail?.session.currentPhase, "wrap_up");
+  assert.equal(detail?.session.status, "active");
+  assert.equal(detail?.events.length, 2);
+  assert.equal(detail?.reflection?.reflectionText, "Drawing one per friend helped.");
+  assert.equal((await store.listComprehensionChecks(ownerKey, session.id)).length, 1);
+});
+
+test("commitTurn writes nothing when the optimistic lock loses the race", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const session = await store.createSession(ownerKey); // stays at session_open
+
+  const result = await store.commitTurn(ownerKey, session.id, {
+    activate: true,
+    advance: { activeStep: null, currentPhase: "answer_check", gateStatus: "complete", supportLevel: 0 },
+    comprehensionCheck: { accepted: true, checkKind: "restatement", studentResponse: "x" },
+    events: [{ message: "Student turn", value: { text: "x" } }],
+    expectedPhase: "step_loop", // wrong — the session is still at session_open
+    reflection: { reflectionText: "y" }
+  });
+
+  assert.equal(result, null);
+  const detail = await store.getSession(ownerKey, session.id);
+  // The whole turn is a no-op: phase unchanged and not a single dependent write landed.
+  assert.equal(detail?.session.currentPhase, "session_open");
+  assert.equal(detail?.session.status, "draft");
+  assert.equal(detail?.events.length, 0);
+  assert.equal(detail?.reflection, null);
+  assert.equal((await store.listComprehensionChecks(ownerKey, session.id)).length, 0);
+});
+
 test("mapD1SessionRow normalizes optional image columns", () => {
   const session = mapD1SessionRow({
     created_at: "2026-06-17T01:02:03.000Z",

@@ -13,7 +13,7 @@ import {
   type SessionReflectionRecord
 } from "./session-types.js";
 import type { ProblemContextRecord } from "./problem-context/problem-frame.js";
-import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type CommitTurnRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
 import {
   createProblemContextRecord,
@@ -67,6 +67,102 @@ export class D1SessionStore implements SessionStore {
     if ((result.meta.changes ?? 0) !== 1) {
       return null;
     }
+
+    const row = await this.getOwnedSessionRow(ownerKey, sessionId);
+    return row ? mapD1SessionRow(row) : null;
+  }
+
+  async commitTurn(
+    ownerKey: string,
+    sessionId: string,
+    request: CommitTurnRequest
+  ): Promise<TutorSessionRecord | null> {
+    const { advance, expectedPhase } = request;
+    const updatedAt = nowIso();
+
+    // The optimistic-locked advance is the first statement. Every dependent write is gated
+    // on the row now carrying this turn's phase AND timestamp, so when the advance loses the
+    // race (0 rows changed) the inserts match nothing — the whole batch is a no-op. D1 runs
+    // the array as one transaction, so a partial turn (phase moved, events lost) can't occur.
+    const guard = `EXISTS (SELECT 1 FROM tutor_sessions WHERE id = ? AND current_phase = ? AND updated_at = ?)`;
+    const guardBinds = [sessionId, advance.currentPhase, updatedAt] as const;
+
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `UPDATE tutor_sessions
+           SET current_phase = ?, gate_status = ?, current_support_level = ?, active_step_json = ?, updated_at = ?
+           WHERE id = ? AND owner_key = ? AND current_phase = ?`
+        )
+        .bind(
+          advance.currentPhase,
+          advance.gateStatus,
+          advance.supportLevel,
+          serializeActiveStep(advance.activeStep),
+          updatedAt,
+          sessionId,
+          ownerKey,
+          expectedPhase
+        )
+    ];
+
+    if (request.activate) {
+      // Flip draft → active without touching the gating columns, so later statements still match.
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE tutor_sessions SET status = 'active'
+             WHERE id = ? AND owner_key = ? AND current_phase = ? AND updated_at = ?`
+          )
+          .bind(sessionId, ownerKey, advance.currentPhase, updatedAt)
+      );
+    }
+
+    for (const event of request.events) {
+      const valueJson = event.value === undefined ? null : JSON.stringify(event.value);
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO session_events (session_id, message, value_json, created_at)
+             SELECT ?, ?, ?, ? WHERE ${guard}`
+          )
+          .bind(sessionId, event.message, valueJson, updatedAt, ...guardBinds)
+      );
+    }
+
+    if (request.comprehensionCheck) {
+      const check = request.comprehensionCheck;
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO comprehension_checks (session_id, check_kind, student_response, accepted, created_at)
+             SELECT ?, ?, ?, ?, ? WHERE ${guard}`
+          )
+          .bind(sessionId, check.checkKind, check.studentResponse, check.accepted ? 1 : 0, updatedAt, ...guardBinds)
+      );
+    }
+
+    if (request.reflection) {
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO session_reflections (session_id, owner_key, reflection_text, created_at, updated_at)
+             SELECT ?, ?, ?, ?, ? WHERE ${guard}
+             ON CONFLICT(session_id) DO UPDATE SET
+               reflection_text = excluded.reflection_text,
+               updated_at = excluded.updated_at`
+          )
+          .bind(sessionId, ownerKey, request.reflection.reflectionText.trim(), updatedAt, updatedAt, ...guardBinds)
+      );
+    }
+
+    const results = await this.db.batch(statements);
+    if ((results[0]?.meta.changes ?? 0) !== 1) {
+      return null;
+    }
+
+    // Trim the event log to the cap after the batch, mirroring appendEvent's retention.
+    await this.trimSessionEvents(sessionId);
 
     const row = await this.getOwnedSessionRow(ownerKey, sessionId);
     return row ? mapD1SessionRow(row) : null;
@@ -144,6 +240,13 @@ export class D1SessionStore implements SessionStore {
 
     const eventId = Number(insert.meta.last_row_id);
 
+    await this.trimSessionEvents(sessionId);
+
+    return createSessionEventRecord(sessionId, eventId, createdAt, request);
+  }
+
+  /** Cap a session's event log to the most recent `maxSessionEvents`, newest kept. */
+  private async trimSessionEvents(sessionId: string): Promise<void> {
     await this.db
       .prepare(
         `DELETE FROM session_events
@@ -158,8 +261,6 @@ export class D1SessionStore implements SessionStore {
       )
       .bind(sessionId, maxSessionEvents)
       .run();
-
-    return createSessionEventRecord(sessionId, eventId, createdAt, request);
   }
 
   async createSession(ownerKey: string, request: CreateTutorSessionRequest = {}): Promise<TutorSessionRecord> {

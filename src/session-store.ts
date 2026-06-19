@@ -42,6 +42,22 @@ export type AppendComprehensionCheckRequest = {
   studentResponse: string;
 };
 
+/**
+ * Everything one tutoring turn writes, committed as a single unit: the optimistic-locked
+ * phase advance, the draft→active flip, the ordered event log entries, an optional
+ * comprehension check, and an optional reflection. Bundling them lets the store commit the
+ * whole turn atomically, so an isolate death can never advance the phase while losing the
+ * events that explain the move.
+ */
+export type CommitTurnRequest = {
+  activate: boolean;
+  advance: SessionPhaseAdvance;
+  comprehensionCheck: AppendComprehensionCheckRequest | null;
+  events: AppendSessionEventRequest[];
+  expectedPhase: SessionPhase;
+  reflection: { reflectionText: string } | null;
+};
+
 export type SessionStore = {
   /**
    * Advance the authoritative phase state, guarded by an optimistic lock on the
@@ -60,6 +76,12 @@ export type SessionStore = {
     request: AppendComprehensionCheckRequest
   ): Promise<void>;
   appendEvent(ownerKey: string, sessionId: string, request: AppendSessionEventRequest): Promise<SessionEventRecord>;
+  /**
+   * Commit a whole turn atomically, guarded by the same optimistic lock as
+   * `advanceSessionPhase`: returns the updated record, or null on a lost race (in which
+   * case nothing is written). All writes land together or not at all.
+   */
+  commitTurn(ownerKey: string, sessionId: string, request: CommitTurnRequest): Promise<TutorSessionRecord | null>;
   createSession(ownerKey: string, request?: CreateTutorSessionRequest): Promise<TutorSessionRecord>;
   listComprehensionChecks(ownerKey: string, sessionId: string): Promise<ComprehensionCheckRecord[]>;
   getProblemContext(ownerKey: string, sessionId: string): Promise<ProblemContextRecord | null>;

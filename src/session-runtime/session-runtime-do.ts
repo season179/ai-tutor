@@ -4,7 +4,8 @@ import { D1SessionStore } from "../d1-session-store.js";
 import type { RequestContext } from "../request-context.js";
 import { handleVoicePipelineTurnWithStore, type VoicePipelineServiceEnv } from "../voice-pipeline-service.js";
 import type { VoicePipelineTurnRequest, VoicePipelineTurnResponse } from "../voice-types.js";
-import { hintNudgeForSupportLevel, hintTimerEventMessage, hintWaitMs, shouldArmHintTimer } from "./hint-timer.js";
+import { runIdleHintAlarm } from "./hint-alarm.js";
+import { hintWaitMs, shouldArmHintTimer } from "./hint-timer.js";
 
 export type ProcessTurnPayload = {
   body: unknown;
@@ -46,25 +47,10 @@ export class SessionRuntimeDO extends DurableObject<SessionRuntimeEnv> {
     }
 
     const store = new D1SessionStore(this.env.DB);
-    const detail = await store.getSession(ownerKey, sessionId);
+    const { rearmAtMs } = await runIdleHintAlarm(store, ownerKey, sessionId, Date.now());
 
-    if (!detail || !shouldArmHintTimer(detail.session.currentPhase)) {
-      return;
+    if (rearmAtMs !== null) {
+      await this.ctx.storage.setAlarm(rearmAtMs);
     }
-
-    await store.appendEvent(ownerKey, sessionId, {
-      message: hintTimerEventMessage,
-      value: {
-        kind: "idle_nudge",
-        supportLevel: detail.session.supportLevel,
-        // Derive the nudge from the live step (answer-free fields only), not a fixed script.
-        text: hintNudgeForSupportLevel(detail.session.supportLevel, {
-          ask: detail.session.activeStep?.ask ?? null,
-          scaffoldAid: detail.session.activeStep?.scaffoldAid ?? null
-        })
-      }
-    });
-
-    await this.ctx.storage.setAlarm(Date.now() + hintWaitMs);
   }
 }
