@@ -60,4 +60,6 @@ export function activeSessionStorageKey(userId: string): string {
 
 export const sidebarCollapsedStorageKey = "ai-tutor.sidebar-collapsed";
 
+export const rightSidebarCollapsedStorageKey = "ai-tutor.right-sidebar-collapsed";
+
 export { defaultImagePrompt } from "../voice-types.js";

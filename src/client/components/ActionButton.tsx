@@ -23,7 +23,7 @@ export function ActionButton({
   return (
     <button className={classNames(variantClass, className)} type={type} {...props}>
       {icon ? <span className={`button-icon button-icon-${icon}`} aria-hidden="true" /> : null}
-      <span>{children}</span>
+      {children == null || children === "" ? null : <span>{children}</span>}
     </button>
   );
 }

@@ -1,12 +1,11 @@
 import { useMemo, useRef } from "react";
 
 import { BrandLockup } from "./components/BrandLockup.js";
-import { EventLogPanel } from "./components/EventLogPanel.js";
 import { ProblemContextPanel } from "./components/ProblemContextPanel.js";
+import { RightSidebar } from "./components/RightSidebar.js";
 import { SignInScreen } from "./components/SignInScreen.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBadge } from "./components/StatusBadge.js";
-import { VoiceSessionPanel } from "./components/VoiceSessionPanel.js";
 import { useAuth } from "./hooks/use-auth.js";
 import { useEventLog } from "./hooks/use-event-log.js";
 import { useProblemContextStep1 } from "./hooks/use-problem-context-step1.js";
@@ -16,7 +15,7 @@ import { useTutorSessions } from "./hooks/use-tutor-sessions.js";
 import { useVoiceSession } from "./hooks/use-voice-session.js";
 import { errorMessage } from "./lib/error-message.js";
 import type { LoadedSessionContext, StatusTone } from "./types.js";
-import { hasPriorActivity } from "./types.js";
+import { hasPriorActivity, rightSidebarCollapsedStorageKey } from "./types.js";
 
 export function App() {
   const { authError, isAnonymous, isAuthLoading, signInWithGoogle, signOut, userEmail, userId } =
@@ -34,6 +33,8 @@ export function App() {
   const { clearEventLog, loadEventLog, logEvent, logText } = useEventLog(activeSessionIdRef, onEventLoggedRef);
 
   const { collapsed: sidebarCollapsed, toggleCollapsed: toggleSidebarCollapsed } = useSidebarCollapsed();
+  const { collapsed: rightSidebarCollapsed, toggleCollapsed: toggleRightSidebarCollapsed } =
+    useSidebarCollapsed(rightSidebarCollapsedStorageKey);
 
   const tutorSessions = useTutorSessions({
     clearEventLog,
@@ -175,64 +176,61 @@ export function App() {
           <StatusBadge message={status.message} tone={status.tone} />
         </header>
 
-        <div className="main-grid">
-          <ProblemContextPanel
-            confirmDisabled={
-              problemContextStep1.isBusy ||
-              !problemContextStep1.imagePrompt.trim() ||
-              problemContextStep1.promptConfirmed
-            }
-            emptyMessage={problemContextStep1.emptyMessage}
-            extractionAlert={problemContextStep1.extractionAlert}
-            extractionStatusHint={problemContextStep1.extractionStatusHint}
-            fileInputDisabled={problemContextStep1.isBusy || !sessionReady}
-            imageMeta={problemContextStep1.imageMeta}
-            imagePrompt={problemContextStep1.imagePrompt}
-            isBusy={problemContextStep1.isBusy}
-            onConfirmPrompt={problemContextStep1.confirmPrompt}
-            onFileChange={problemContextStep1.handleFileChange}
-            onPromptChange={problemContextStep1.handlePromptChange}
-            onReExtract={problemContextStep1.reExtractQuestion}
-            onRetryUpload={problemContextStep1.retryUpload}
-            onSubmit={problemImageSend.sendImage}
-            previewUrl={problemContextStep1.previewUrl}
-            previewWarning={problemContextStep1.previewWarning}
-            reExtractDisabled={
-              problemContextStep1.isBusy ||
-              !problemContextStep1.objectKey ||
-              !sessionReady
-            }
-            retryUploadVisible={
-              problemContextStep1.uploadStatus === "failed" && Boolean(problemContextStep1.preparedImage)
-            }
-            sendDisabled={
-              problemImageSend.sendDisabled ||
-              !sessionReady ||
-              problemContextStep1.isBusy ||
-              !problemContextStep1.promptConfirmed
-            }
-          />
-
-          <div className="side-stack">
-            <VoiceSessionPanel
-              audioRef={audioRef}
-              canRecordAudioTurn={canRecordAudioTurn}
-              hasPriorActivity={activeSessionHasPriorActivity}
-              isRecording={isRecording}
-              isRunning={isRunning}
-              onFinishAudioTurn={() => {
-                void finishAudioTurn();
-              }}
-              onStart={handleStart}
-              onStartAudioTurn={startAudioTurn}
-              onStop={stopSession}
-              sessionReady={sessionReady}
-            />
-
-            <EventLogPanel logText={logText} />
-          </div>
-        </div>
+        <ProblemContextPanel
+          confirmDisabled={
+            problemContextStep1.isBusy ||
+            !problemContextStep1.imagePrompt.trim() ||
+            problemContextStep1.promptConfirmed
+          }
+          emptyMessage={problemContextStep1.emptyMessage}
+          extractionAlert={problemContextStep1.extractionAlert}
+          extractionStatusHint={problemContextStep1.extractionStatusHint}
+          fileInputDisabled={problemContextStep1.isBusy || !sessionReady}
+          imageMeta={problemContextStep1.imageMeta}
+          imagePrompt={problemContextStep1.imagePrompt}
+          isBusy={problemContextStep1.isBusy}
+          onConfirmPrompt={problemContextStep1.confirmPrompt}
+          onFileChange={problemContextStep1.handleFileChange}
+          onPromptChange={problemContextStep1.handlePromptChange}
+          onReExtract={problemContextStep1.reExtractQuestion}
+          onRetryUpload={problemContextStep1.retryUpload}
+          onSubmit={problemImageSend.sendImage}
+          previewUrl={problemContextStep1.previewUrl}
+          previewWarning={problemContextStep1.previewWarning}
+          reExtractDisabled={
+            problemContextStep1.isBusy ||
+            !problemContextStep1.objectKey ||
+            !sessionReady
+          }
+          retryUploadVisible={
+            problemContextStep1.uploadStatus === "failed" && Boolean(problemContextStep1.preparedImage)
+          }
+          sendDisabled={
+            problemImageSend.sendDisabled ||
+            !sessionReady ||
+            problemContextStep1.isBusy ||
+            !problemContextStep1.promptConfirmed
+          }
+        />
       </div>
+
+      <RightSidebar
+        audioRef={audioRef}
+        canRecordAudioTurn={canRecordAudioTurn}
+        collapsed={rightSidebarCollapsed}
+        hasPriorActivity={activeSessionHasPriorActivity}
+        isRecording={isRecording}
+        isRunning={isRunning}
+        logText={logText}
+        onFinishAudioTurn={() => {
+          void finishAudioTurn();
+        }}
+        onStart={handleStart}
+        onStartAudioTurn={startAudioTurn}
+        onStop={stopSession}
+        onToggleCollapsed={toggleRightSidebarCollapsed}
+        sessionReady={sessionReady}
+      />
     </main>
   );
 }

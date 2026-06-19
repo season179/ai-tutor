@@ -1,11 +1,13 @@
 import type { RefObject } from "react";
 
+import { classNames } from "../lib/class-names.js";
 import { ActionButton } from "./ActionButton.js";
 import { Panel } from "./Panel.js";
 
 type VoiceSessionPanelProps = {
   audioRef: RefObject<HTMLAudioElement | null>;
   canRecordAudioTurn: boolean;
+  collapsed?: boolean;
   hasPriorActivity: boolean;
   isRunning: boolean;
   isRecording: boolean;
@@ -19,6 +21,7 @@ type VoiceSessionPanelProps = {
 export function VoiceSessionPanel({
   audioRef,
   canRecordAudioTurn,
+  collapsed = false,
   hasPriorActivity,
   isRunning,
   isRecording,
@@ -29,6 +32,58 @@ export function VoiceSessionPanel({
   sessionReady
 }: VoiceSessionPanelProps) {
   const startLabel = hasPriorActivity ? "Continue tutoring" : "Start tutoring";
+  const recordLabel = isRecording ? "Stop and send" : "Record answer";
+
+  const controls = (
+    <div className={classNames("controls", collapsed && "controls--collapsed")}>
+      <ActionButton
+        aria-label={collapsed ? startLabel : undefined}
+        className={collapsed ? "voice-control-compact" : undefined}
+        disabled={!sessionReady || isRunning}
+        icon="play"
+        onClick={onStart}
+        title={collapsed ? startLabel : undefined}
+        variant="primary"
+      >
+        {collapsed ? null : startLabel}
+      </ActionButton>
+      <ActionButton
+        aria-label={collapsed ? "End session" : undefined}
+        className={collapsed ? "voice-control-compact" : undefined}
+        disabled={!isRunning}
+        icon="stop"
+        onClick={onStop}
+        title={collapsed ? "End session" : undefined}
+        variant="secondary"
+      >
+        {collapsed ? null : "End session"}
+      </ActionButton>
+      {canRecordAudioTurn ? (
+        <ActionButton
+          aria-label={collapsed ? recordLabel : undefined}
+          className={collapsed ? "voice-control-compact" : undefined}
+          disabled={!isRunning}
+          icon={isRecording ? "send" : "play"}
+          onClick={isRecording ? onFinishAudioTurn : onStartAudioTurn}
+          title={collapsed ? recordLabel : undefined}
+          variant="secondary"
+        >
+          {collapsed ? null : recordLabel}
+        </ActionButton>
+      ) : null}
+    </div>
+  );
+
+  const audio = <audio ref={audioRef} id="remote-audio" autoPlay />;
+
+  if (collapsed) {
+    return (
+      <div aria-label="Voice session" className="session-panel session-panel--collapsed" role="group">
+        {controls}
+        {audio}
+      </div>
+    );
+  }
 
   return (
     <Panel
@@ -37,39 +92,9 @@ export function VoiceSessionPanel({
       id="session-title"
       title="Voice session"
     >
-      <div className="controls">
-        <ActionButton
-          disabled={!sessionReady || isRunning}
-          icon="play"
-          onClick={onStart}
-          variant="primary"
-        >
-          {startLabel}
-        </ActionButton>
-        <ActionButton disabled={!isRunning} icon="stop" onClick={onStop} variant="secondary">
-          End session
-        </ActionButton>
-        {canRecordAudioTurn ? (
-          <ActionButton
-            disabled={!isRunning}
-            icon={isRecording ? "send" : "play"}
-            onClick={isRecording ? onFinishAudioTurn : onStartAudioTurn}
-            variant="secondary"
-          >
-            {isRecording ? "Stop and send" : "Record answer"}
-          </ActionButton>
-        ) : null}
-      </div>
+      {controls}
 
-      <div className="session-note">
-        <h3>Session behavior</h3>
-        <p>
-          The tutor gives one step at a time. Record your answer after each prompt, then wait for the
-          next hint or question.
-        </p>
-      </div>
-
-      <audio ref={audioRef} id="remote-audio" autoPlay />
+      {audio}
     </Panel>
   );
 }
