@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "headers": ["Content-Type"],
+        "methods": ["GET", "HEAD", "PUT"],
+        "origins": ["https://ai-tutor.dev", "http://localhost:8787", "http://127.0.0.1:8787"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

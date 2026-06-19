@@ -29,6 +29,7 @@ export const updateTutorSessionRequestSchema = z
   .object({
     imageMeta: sessionImageMetaSchema.nullable().optional(),
     imageName: z.string().trim().min(1).max(255).nullable().optional(),
+    imageObjectKey: z.string().trim().min(1).max(512).nullable().optional(),
     imagePrompt: z.string().max(4_000).nullable().optional(),
     status: tutorSessionStatusSchema.optional(),
     title: z.string().trim().min(1).max(120).optional()
@@ -54,6 +55,7 @@ const tutorSessionSummarySchema = z.object({
 const tutorSessionRecordSchema = tutorSessionSummarySchema.extend({
   imageMeta: sessionImageMetaSchema.nullable(),
   imageName: z.string().nullable(),
+  imageObjectKey: z.string().nullable(),
   imagePrompt: z.string().nullable(),
   ownerKey: z.string().min(1)
 }) satisfies z.ZodType<TutorSessionRecord>;

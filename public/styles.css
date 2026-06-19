@@ -705,6 +705,36 @@ p {
   min-height: 0;
 }
 
+.workflow-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.workflow-step-label {
+  color: var(--ink-strong);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.workflow-step-description {
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.extraction-status {
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  margin: 0 0 0.35rem;
+}
+
+.later-step-action {
+  opacity: 0.72;
+}
+
 .image-grid {
   align-items: stretch;
   display: grid;
@@ -728,7 +758,7 @@ p {
 }
 
 .question-field {
-  grid-template-rows: auto minmax(12rem, 1fr);
+  grid-template-rows: auto auto minmax(12rem, 1fr);
   min-height: 0;
 }
 

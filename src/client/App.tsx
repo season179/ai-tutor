@@ -9,7 +9,8 @@ import { StatusBadge } from "./components/StatusBadge.js";
 import { VoiceSessionPanel } from "./components/VoiceSessionPanel.js";
 import { useAuth } from "./hooks/use-auth.js";
 import { useEventLog } from "./hooks/use-event-log.js";
-import { useProblemImage } from "./hooks/use-problem-image.js";
+import { useProblemContextStep1 } from "./hooks/use-problem-context-step1.js";
+import { useProblemImageSend } from "./hooks/use-problem-image.js";
 import { useSidebarCollapsed } from "./hooks/use-sidebar-collapsed.js";
 import { useTutorSessions } from "./hooks/use-tutor-sessions.js";
 import { useVoiceSession } from "./hooks/use-voice-session.js";
@@ -83,17 +84,27 @@ export function App() {
   setStatusRef.current = setStatus;
   stopVoiceSessionRef.current = stopSession;
 
-  const problemImage = useProblemImage({
+  const problemContextStep1 = useProblemContextStep1({
     activeSessionId: tutorSessions.activeSessionId,
-    ensureSessionReadyForImage,
-    getPayloadLimitBytes,
-    getSession,
     logEvent,
     setStatus
   });
 
-  loadSessionContextRef.current = problemImage.loadSessionContext;
-  resetProblemImageRef.current = problemImage.resetProblemImage;
+  const problemImageSend = useProblemImageSend({
+    activeSessionId: tutorSessions.activeSessionId,
+    ensureSessionReadyForImage,
+    getPayloadLimitBytes,
+    imagePrompt: problemContextStep1.imagePrompt,
+    logEvent,
+    objectKey: problemContextStep1.objectKey,
+    onPreparedImageChange: problemContextStep1.setPreparedImageFromSend,
+    preparedImage: problemContextStep1.preparedImage,
+    selectedImageFile: problemContextStep1.selectedImageFile,
+    setStatus
+  });
+
+  loadSessionContextRef.current = problemContextStep1.loadSessionContext;
+  resetProblemImageRef.current = problemContextStep1.resetStep1;
   onEventLoggedRef.current = tutorSessions.notifyEventLogged;
 
   const activeSessionHasPriorActivity = hasPriorActivity(
@@ -165,15 +176,24 @@ export function App() {
 
         <div className="main-grid">
           <ProblemContextPanel
-            emptyMessage={problemImage.emptyMessage}
-            imageMeta={problemImage.imageMeta}
-            imagePrompt={problemImage.imagePrompt}
-            isPreparingImage={problemImage.isPreparingImage}
-            onFileChange={problemImage.handleFileChange}
-            onPromptChange={problemImage.handlePromptChange}
-            onSubmit={problemImage.sendImage}
-            preparedImage={problemImage.preparedImage}
-            sendDisabled={problemImage.sendDisabled || !sessionReady}
+            emptyMessage={problemContextStep1.emptyMessage}
+            extractionStatusHint={problemContextStep1.extractionStatusHint}
+            imageMeta={problemContextStep1.imageMeta}
+            imagePrompt={problemContextStep1.imagePrompt}
+            isBusy={problemContextStep1.isBusy}
+            onFileChange={problemContextStep1.handleFileChange}
+            onPromptChange={problemContextStep1.handlePromptChange}
+            onReExtract={problemContextStep1.reExtractQuestion}
+            onSubmit={problemImageSend.sendImage}
+            previewUrl={problemContextStep1.previewUrl}
+            reExtractDisabled={
+              problemContextStep1.isBusy ||
+              !problemContextStep1.objectKey ||
+              !sessionReady
+            }
+            sendDisabled={
+              problemImageSend.sendDisabled || !sessionReady || problemContextStep1.isBusy
+            }
           />
 
           <div className="side-stack">

@@ -17,6 +17,16 @@ export {
   defaultTutorModel
 } from "./voice-pipeline-service.js";
 export { maxJsonRequestBodyBytes } from "./session-handler.js";
+export {
+  handleExtractQuestionRequest,
+  handlePreviewUrlRequest,
+  handleUploadUrlRequest
+} from "./problem-context/problem-context-handler.js";
+export {
+  createProblemImageObjectKey,
+  isOwnedProblemImageKey
+} from "./problem-context/problem-image-store.js";
+export { extractQuestionFromImageUrl } from "./problem-context/question-extraction-service.js";
 export { maxVoiceTurnBodyBytes, voiceTurnPath } from "./voice-types.js";
 export type { JsonValue } from "./http-error.js";
 export { HttpError } from "./http-error.js";

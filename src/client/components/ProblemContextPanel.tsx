@@ -1,30 +1,35 @@
 import type { FormEvent } from "react";
 
-import type { PreparedImage } from "../lib/image-preparation.js";
 import { ActionButton } from "./ActionButton.js";
 import { Panel } from "./Panel.js";
 
 type ProblemContextPanelProps = {
   emptyMessage: string;
+  extractionStatusHint: string | null;
   imageMeta: string;
   imagePrompt: string;
-  isPreparingImage: boolean;
+  isBusy: boolean;
   onFileChange: (file: File | undefined) => void;
   onPromptChange: (value: string) => void;
+  onReExtract: () => void | Promise<void>;
   onSubmit: () => void | Promise<void>;
-  preparedImage: PreparedImage | undefined;
+  previewUrl: string | undefined;
+  reExtractDisabled: boolean;
   sendDisabled: boolean;
 };
 
 export function ProblemContextPanel({
   emptyMessage,
+  extractionStatusHint,
   imageMeta,
   imagePrompt,
-  isPreparingImage,
+  isBusy,
   onFileChange,
   onPromptChange,
+  onReExtract,
   onSubmit,
-  preparedImage,
+  previewUrl,
+  reExtractDisabled,
   sendDisabled
 }: ProblemContextPanelProps) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -39,12 +44,19 @@ export function ProblemContextPanel({
       id="problem-title"
       title="Problem context"
     >
+      <div className="workflow-step">
+        <p className="workflow-step-label">Step 1 · Confirm the question</p>
+        <p className="workflow-step-description">
+          Upload a photo of the problem. We&apos;ll read the question so you can check it before tutoring.
+        </p>
+      </div>
+
       <form className="image-form" onSubmit={handleSubmit}>
         <label className="field file-field">
           <span>Problem image</span>
           <input
             accept="image/*"
-            disabled={isPreparingImage}
+            disabled={isBusy}
             type="file"
             onChange={(event) => onFileChange(event.target.files?.item(0) ?? undefined)}
           />
@@ -53,8 +65,13 @@ export function ProblemContextPanel({
         <div className="image-grid">
           <label className="field question-field">
             <span>Question</span>
+            {extractionStatusHint ? (
+              <p className="extraction-status" aria-live="polite">
+                {extractionStatusHint}
+              </p>
+            ) : null}
             <textarea
-              disabled={isPreparingImage}
+              disabled={isBusy}
               rows={5}
               value={imagePrompt}
               onChange={(event) => onPromptChange(event.target.value)}
@@ -63,8 +80,8 @@ export function ProblemContextPanel({
 
           <div className="image-preview-block" aria-live="polite">
             <div className="image-preview">
-              {preparedImage ? (
-                <img alt={`Preview of ${preparedImage.name}`} src={preparedImage.dataUrl} />
+              {previewUrl ? (
+                <img alt="Problem image preview" src={previewUrl} />
               ) : (
                 <p>{emptyMessage}</p>
               )}
@@ -75,7 +92,18 @@ export function ProblemContextPanel({
 
         <div className="form-actions">
           <ActionButton
-            className="send-action"
+            disabled={reExtractDisabled}
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              void onReExtract();
+            }}
+          >
+            Re-extract
+          </ActionButton>
+
+          <ActionButton
+            className="send-action later-step-action"
             disabled={sendDisabled}
             icon="send"
             type="submit"

@@ -21,6 +21,7 @@ export type TutorSessionSummary = {
 export type TutorSessionRecord = TutorSessionSummary & {
   imageMeta: SessionImageMeta | null;
   imageName: string | null;
+  imageObjectKey: string | null;
   imagePrompt: string | null;
   ownerKey: string;
 };
@@ -45,6 +46,7 @@ export type CreateTutorSessionRequest = {
 export type UpdateTutorSessionRequest = {
   imageMeta?: SessionImageMeta | null;
   imageName?: string | null;
+  imageObjectKey?: string | null;
   imagePrompt?: string | null;
   status?: TutorSessionStatus;
   title?: string;
@@ -78,6 +80,7 @@ export function applyTutorSessionUpdate(
     ...session,
     imageMeta: updateValue(request.imageMeta, session.imageMeta),
     imageName: updateValue(request.imageName, session.imageName),
+    imageObjectKey: updateValue(request.imageObjectKey, session.imageObjectKey),
     imagePrompt: updateValue(request.imagePrompt, session.imagePrompt),
     status: updateValue(request.status, session.status),
     title: updateValue(request.title?.trim(), session.title),

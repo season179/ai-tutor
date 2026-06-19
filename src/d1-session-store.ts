@@ -20,7 +20,7 @@ import {
 } from "./memory-session-store.js";
 
 const tutorSessionColumns =
-  "id, owner_key, title, status, image_prompt, image_name, image_meta_json, created_at, updated_at";
+  "id, owner_key, title, status, image_prompt, image_name, image_meta_json, image_object_key, created_at, updated_at";
 
 function d1Rows(result: D1Result): Record<string, unknown>[] {
   return (result.results ?? []) as Record<string, unknown>[];
@@ -81,7 +81,7 @@ export class D1SessionStore implements SessionStore {
     await this.db
       .prepare(
         `INSERT INTO tutor_sessions (${tutorSessionColumns})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         session.id,
@@ -91,6 +91,7 @@ export class D1SessionStore implements SessionStore {
         session.imagePrompt,
         session.imageName,
         serializeImageMeta(session.imageMeta),
+        session.imageObjectKey,
         session.createdAt,
         session.updatedAt
       )
@@ -172,7 +173,7 @@ export class D1SessionStore implements SessionStore {
     await this.db
       .prepare(
         `UPDATE tutor_sessions
-         SET title = ?, status = ?, image_prompt = ?, image_name = ?, image_meta_json = ?, updated_at = ?
+         SET title = ?, status = ?, image_prompt = ?, image_name = ?, image_meta_json = ?, image_object_key = ?, updated_at = ?
          WHERE id = ? AND owner_key = ?`
       )
       .bind(
@@ -181,6 +182,7 @@ export class D1SessionStore implements SessionStore {
         updated.imagePrompt,
         updated.imageName,
         imageMetaJson,
+        updated.imageObjectKey,
         updated.updatedAt,
         sessionId,
         ownerKey

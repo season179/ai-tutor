@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@openai/agents": "^0.11.6",
+    "aws4fetch": "^1.0.20",
     "better-auth": "^1.6.19",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

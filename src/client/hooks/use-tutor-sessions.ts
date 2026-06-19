@@ -54,11 +54,12 @@ function toSessionListError(error: unknown): SessionListError {
 }
 
 function toLoadedSessionContext(
-  session: Pick<TutorSessionRecord, "imageMeta" | "imageName" | "imagePrompt">
+  session: Pick<TutorSessionRecord, "imageMeta" | "imageName" | "imageObjectKey" | "imagePrompt">
 ): LoadedSessionContext {
   return {
     imageMeta: session.imageMeta,
     imageName: session.imageName,
+    imageObjectKey: session.imageObjectKey,
     imagePrompt: session.imagePrompt
   };
 }

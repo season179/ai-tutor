@@ -11,6 +11,7 @@ const baseSession: TutorSessionRecord = {
   id: "session-1",
   imageMeta: { bytes: 120_000, height: 900, width: 1200 },
   imageName: "worksheet.jpg",
+  imageObjectKey: "session-1/image.jpg",
   imagePrompt: "Walk me through this problem.",
   ownerKey: "access:user-a",
   status: "draft",

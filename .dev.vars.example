@@ -27,3 +27,9 @@ OPENAI_TTS_VOICE=marin
 OPENAI_REALTIME_MODEL=gpt-realtime-2
 OPENAI_REALTIME_VOICE=marin
 OPENAI_SAFETY_IDENTIFIER=local-ai-tutor-user
+OPENAI_VISION_MODEL=gpt-5.5
+
+# R2 direct-upload credentials (Cloudflare dashboard → R2 → Manage API tokens)
+R2_ACCESS_KEY_ID=your-r2-access-key-id
+R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
+R2_ACCOUNT_ID=your-cloudflare-account-id

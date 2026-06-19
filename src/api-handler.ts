@@ -1,5 +1,17 @@
 import { type Auth } from "./auth.js";
 import { HttpError, type JsonValue } from "./http-error.js";
+import {
+  createProblemContextHandlerEnv,
+  handleExtractQuestionRequest,
+  handlePreviewUrlRequest,
+  handleUploadUrlRequest,
+  type ProblemContextHandlerEnv
+} from "./problem-context/problem-context-handler.js";
+import {
+  problemContextExtractQuestionPath,
+  problemContextPreviewUrlPath,
+  problemContextUploadUrlPath
+} from "./problem-context/problem-context-types.js";
 import type { SessionStore } from "./session-store.js";
 import { handleSessionsRequest, readJsonBody } from "./session-handler.js";
 import { sessionsPath } from "./session-types.js";
@@ -9,19 +21,9 @@ import { type VoiceSessionServiceEnv } from "./voice-session-service.js";
 import { maxVoiceTurnBodyBytes, voiceSessionPath, voiceTurnPath } from "./voice-types.js";
 import { buildOwnerKey, type AuthIdentity, type RequestContext } from "./request-context.js";
 
-export type ApiHandlerEnv = VoiceSessionServiceEnv;
+export type ApiHandlerEnv = VoiceSessionServiceEnv & ProblemContextHandlerEnv;
 
-export type ApiHandlerEnvSource = {
-  OPENAI_API_KEY?: string;
-  OPENAI_REALTIME_MODEL?: string;
-  OPENAI_REALTIME_VOICE?: string;
-  OPENAI_SAFETY_IDENTIFIER?: string;
-  OPENAI_TRANSCRIBE_MODEL?: string;
-  OPENAI_TTS_MODEL?: string;
-  OPENAI_TTS_VOICE?: string;
-  OPENAI_TUTOR_MODEL?: string;
-  VOICE_BACKEND?: string;
-};
+export type ApiHandlerEnvSource = VoiceSessionServiceEnv & ProblemContextHandlerEnv;
 
 export type ApiHandlerOptions = {
   auth: Auth;
@@ -30,6 +32,7 @@ export type ApiHandlerOptions = {
 
 export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv {
   return {
+    ...createProblemContextHandlerEnv(source),
     OPENAI_API_KEY: source.OPENAI_API_KEY,
     OPENAI_REALTIME_MODEL: source.OPENAI_REALTIME_MODEL,
     OPENAI_REALTIME_VOICE: source.OPENAI_REALTIME_VOICE,
@@ -57,6 +60,9 @@ function isApiPath(pathname: string): boolean {
   return (
     pathname === voiceSessionPath ||
     pathname === voiceTurnPath ||
+    pathname === problemContextUploadUrlPath ||
+    pathname === problemContextExtractQuestionPath ||
+    pathname === problemContextPreviewUrlPath ||
     pathname === sessionsPath ||
     pathname.startsWith(`${sessionsPath}/`)
   );
@@ -66,11 +72,6 @@ function unauthorized(): HttpError {
   return new HttpError(401, "Unauthorized");
 }
 
-/**
- * Resolves the authenticated user from the better-auth session cookie.
- * Returns a RequestContext whose ownerKey is the better-auth user id, or
- * throws 401 if there is no valid session.
- */
 async function authenticate(request: Request, auth: Auth): Promise<RequestContext> {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) {
@@ -132,6 +133,51 @@ export async function handleApiRequest(
       return json(response, 200);
     }
 
+    if (url.pathname === problemContextUploadUrlPath) {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+
+      const response = await handleUploadUrlRequest(
+        await readJsonBody(request),
+        env,
+        options.store,
+        context
+      );
+
+      return json(response, 200);
+    }
+
+    if (url.pathname === problemContextExtractQuestionPath) {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+
+      const response = await handleExtractQuestionRequest(
+        await readJsonBody(request),
+        env,
+        options.store,
+        context
+      );
+
+      return json(response, 200);
+    }
+
+    if (url.pathname === problemContextPreviewUrlPath) {
+      if (request.method !== "POST") {
+        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
+      }
+
+      const response = await handlePreviewUrlRequest(
+        await readJsonBody(request),
+        env,
+        options.store,
+        context
+      );
+
+      return json(response, 200);
+    }
+
     const payload = await handleSessionsRequest(request, context, options.store);
     return json(payload as JsonValue, 200);
   } catch (error) {
@@ -143,6 +189,10 @@ function handleApiError(error: unknown, url: URL): Response {
   if (error instanceof HttpError) {
     if (error.message === "Missing OPENAI_API_KEY") {
       return json({ error: "Server is missing OPENAI_API_KEY." }, 500);
+    }
+
+    if (error.message === "Server is missing R2 credentials.") {
+      return json({ error: error.message }, 500);
     }
 
     if (

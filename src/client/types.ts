@@ -19,6 +19,7 @@ export type TutorSessionState = {
 export type LoadedSessionContext = {
   imageMeta: SessionImageMeta | null;
   imageName: string | null;
+  imageObjectKey: string | null;
   imagePrompt: string | null;
 };
 
