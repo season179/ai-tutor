@@ -8,8 +8,10 @@ import {
 
 const baseSession: TutorSessionRecord = {
   createdAt: "2026-06-17T01:02:03.000Z",
+  currentPhase: "session_open",
   extractionNotes: null,
   extractionOutcome: null,
+  gateStatus: null,
   id: "session-1",
   imageMeta: { bytes: 120_000, height: 900, width: 1200 },
   imageName: "worksheet.jpg",
@@ -18,6 +20,7 @@ const baseSession: TutorSessionRecord = {
   ownerKey: "access:user-a",
   promptConfirmed: true,
   status: "draft",
+  supportLevel: 0,
   title: "Algebra help",
   updatedAt: "2026-06-17T01:02:03.000Z"
 };

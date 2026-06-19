@@ -5,6 +5,7 @@ export const maxSessionEvents = 200;
 export type TutorSessionStatus = "draft" | "active" | "ended";
 
 import type { ExtractionOutcome } from "./problem-context/problem-context-types.js";
+import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
 
 export type SessionImageMeta = {
   bytes: number;
@@ -21,14 +22,17 @@ export type TutorSessionSummary = {
 };
 
 export type TutorSessionRecord = TutorSessionSummary & {
+  currentPhase: SessionPhase;
   extractionNotes: string | null;
   extractionOutcome: ExtractionOutcome | null;
+  gateStatus: ComprehensionGateStatus | null;
   imageMeta: SessionImageMeta | null;
   imageName: string | null;
   imageObjectKey: string | null;
   imagePrompt: string | null;
   ownerKey: string;
   promptConfirmed: boolean;
+  supportLevel: SupportLevel;
 };
 
 export type SessionEventRecord = {

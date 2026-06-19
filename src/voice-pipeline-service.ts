@@ -1,15 +1,25 @@
 import { HttpError, type JsonValue } from "./http-error.js";
+import { allowedMoves, canTransition, forbiddenMoves } from "./phase-policy.js";
 import type { RequestContext } from "./request-context.js";
 import type { SessionStore } from "./session-store.js";
 import type { TutorSessionDetail } from "./session-types.js";
 import { isJsonObject } from "./schema-parser.js";
+import {
+  gateForbiddenMoves,
+  sessionPhases,
+  tutorMoves,
+  type ProposedMove,
+  type ProposedTutorAction,
+  type SessionPhase
+} from "./tutor-action.js";
+import { validateTutorAction } from "./tutor-action-validator.js";
 import { tutorPolicy } from "./tutor-policy.js";
 import {
   serializeVoicePipelineTurnResponse,
   parseVoicePipelineTurnRequest
 } from "./voice-session-schema.js";
 import type {
-  LessonControllerTurn,
+  LessonPhase,
   PublicLessonTurn,
   VoicePipelineAudioInput,
   VoicePipelineAudioOutput,
@@ -26,6 +36,10 @@ export const defaultTtsVoice = "marin";
 const maxOpenAiJsonResponseBytes = 256_000;
 const openAiRequestTimeoutMs = 30_000;
 const speechMimeType = "audio/mpeg";
+// How many times the generator may be re-asked when its proposed turn fails the
+// phase rules before we give up. The gate must never be talked past, so a turn that
+// keeps proposing illegal moves fails rather than reaching TTS.
+const maxTutorAttempts = 2;
 
 export type VoicePipelineServiceEnv = {
   OPENAI_API_KEY: string | undefined;
@@ -43,7 +57,7 @@ type VoicePipelineOptions = {
   voice: string;
 };
 
-type CreateLessonTurnInput = {
+type TutorTurnInput = {
   detail: TutorSessionDetail;
   image: VoicePreparedImage | null;
   studentText: string;
@@ -74,26 +88,39 @@ export async function handleVoicePipelineTurnWithStore(
 
   const options = createVoicePipelineOptions(env);
   const studentText = await readStudentText(request, options);
-  const lesson = await createLessonTurn(
-    {
-      detail,
-      image: request.image ?? null,
-      studentText
-    },
-    options
-  );
-  const audio = await createTutorSpeech(lesson.spokenUtterance, options);
-  const publicLesson = toPublicLessonTurn(lesson);
+  const fromPhase = detail.session.currentPhase;
+
+  // The server owns the phase; the generator only proposes a move within it, and the
+  // validator must accept that move before anything is spoken.
+  const action = await proposeTutorAction({ detail, image: request.image ?? null, studentText }, options);
+
+  const audio = await createTutorSpeech(action.spokenUtterance, options);
+  const publicLesson = projectToPublicLesson(action);
   const response = serializeVoicePipelineTurnResponse({
     audio,
     lesson: publicLesson,
     transcript: studentText,
-    tutorText: lesson.spokenUtterance
+    tutorText: action.spokenUtterance
   });
 
-  await store.updateSession(requestContext.ownerKey, request.sessionId, { status: "active" });
+  const toPhase = nextPhaseFor(fromPhase, action);
+  // Optimistic lock on the phase we read. A null result means a concurrent turn already
+  // moved the session off `fromPhase`, so this turn is stale: bail rather than recording a
+  // transition that never happened or speaking over the turn that won the race.
+  const advanced = await store.advanceSessionPhase(requestContext.ownerKey, request.sessionId, fromPhase, {
+    currentPhase: toPhase,
+    gateStatus: detail.session.gateStatus,
+    supportLevel: detail.session.supportLevel
+  });
+  if (!advanced) {
+    throw new HttpError(409, "This session was advanced by another turn. Please retry.");
+  }
+  // Only the first turn flips draft → active; skip the write once it already is.
+  if (detail.session.status !== "active") {
+    await store.updateSession(requestContext.ownerKey, request.sessionId, { status: "active" });
+  }
   await store.appendEvent(requestContext.ownerKey, request.sessionId, {
-    message: request.audio ? "Student turn" : request.image ? "Problem image submitted" : "Student turn",
+    message: request.image && !request.audio ? "Problem image submitted" : "Student turn",
     value: {
       hasAudio: Boolean(request.audio),
       hasImage: Boolean(request.image),
@@ -104,11 +131,19 @@ export async function handleVoicePipelineTurnWithStore(
     message: "Tutor turn",
     value: {
       lesson: publicLesson,
-      text: lesson.spokenUtterance
+      move: action.move,
+      phase: fromPhase,
+      nextPhase: toPhase,
+      text: action.spokenUtterance
     }
   });
 
   return response;
+}
+
+function nextPhaseFor(fromPhase: SessionPhase, action: ProposedTutorAction): SessionPhase {
+  const proposed = action.statePatch?.nextPhase;
+  return proposed && canTransition(fromPhase, proposed) ? proposed : fromPhase;
 }
 
 async function readStudentText(
@@ -151,45 +186,73 @@ async function transcribeAudio(
   return text;
 }
 
-async function createLessonTurn(
-  input: CreateLessonTurnInput,
+async function proposeTutorAction(
+  input: TutorTurnInput,
   options: VoicePipelineOptions
-): Promise<LessonControllerTurn> {
-  const payload = await fetchOpenAiJson("https://api.openai.com/v1/responses", {
-    apiKey: requireOpenAiApiKey(options),
-    body: JSON.stringify({
-      input: createLessonInput(input),
-      instructions: lessonControllerInstructions,
-      model: options.tutorModel,
-      text: {
-        format: {
-          name: "lesson_controller_turn",
-          schema: lessonControllerJsonSchema,
-          strict: true,
-          type: "json_schema"
+): Promise<ProposedTutorAction> {
+  const phase = input.detail.session.currentPhase;
+  let rejectionReasons: string[] = [];
+
+  for (let attempt = 0; attempt < maxTutorAttempts; attempt += 1) {
+    const payload = await fetchOpenAiJson("https://api.openai.com/v1/responses", {
+      apiKey: requireOpenAiApiKey(options),
+      body: JSON.stringify({
+        input: createTutorInput(input),
+        instructions: tutorActionInstructions(phase, rejectionReasons),
+        model: options.tutorModel,
+        text: {
+          format: {
+            name: "tutor_action",
+            schema: proposedTutorActionJsonSchema(phase),
+            strict: true,
+            type: "json_schema"
+          }
         }
-      }
-    }),
-    headers: {
-      "Content-Type": "application/json"
-    },
-    method: "POST"
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const outputText = extractOutputText(payload);
+
+    if (!outputText) {
+      throw new HttpError(502, "OpenAI tutor response did not include output text.", payload);
+    }
+
+    let parsed: JsonValue;
+    try {
+      parsed = JSON.parse(outputText) as JsonValue;
+    } catch (error) {
+      throw new HttpError(
+        502,
+        "OpenAI tutor response was not valid JSON.",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
+    let proposed: ProposedTutorAction;
+    try {
+      proposed = proposedTutorActionFromJson(parsed, phase);
+    } catch (error) {
+      // A well-formed JSON object with an unusable move or shape is the model misbehaving —
+      // the same class the validator catches — so re-ask rather than failing the whole turn.
+      rejectionReasons = [error instanceof Error ? error.message : String(error)];
+      continue;
+    }
+
+    const verdict = validateTutorAction(proposed, { phase });
+    if (verdict.ok) {
+      return proposed;
+    }
+
+    rejectionReasons = verdict.reasons;
+  }
+
+  throw new HttpError(502, "Tutor could not produce a valid turn within the phase rules.", {
+    phase,
+    reasons: rejectionReasons
   });
-  const outputText = extractOutputText(payload);
-
-  if (!outputText) {
-    throw new HttpError(502, "OpenAI tutor response did not include output text.", payload);
-  }
-
-  try {
-    return lessonControllerTurnFromJson(JSON.parse(outputText) as JsonValue);
-  } catch (error) {
-    throw new HttpError(
-      502,
-      "OpenAI tutor response was not valid lesson JSON.",
-      error instanceof Error ? error.message : String(error)
-    );
-  }
 }
 
 async function createTutorSpeech(
@@ -224,10 +287,10 @@ async function createTutorSpeech(
   };
 }
 
-function createLessonInput(input: CreateLessonTurnInput): Array<Record<string, JsonValue>> {
+function createTutorInput(input: TutorTurnInput): Array<Record<string, JsonValue>> {
   const content: Array<Record<string, JsonValue>> = [
     {
-      text: createLessonPrompt(input),
+      text: createTutorPrompt(input),
       type: "input_text"
     }
   ];
@@ -247,83 +310,148 @@ function createLessonInput(input: CreateLessonTurnInput): Array<Record<string, J
   ];
 }
 
-function createLessonPrompt(input: CreateLessonTurnInput): string {
+function createTutorPrompt(input: TutorTurnInput): string {
   return JSON.stringify(
     {
+      currentPhase: input.detail.session.currentPhase,
       currentStudentTurn: input.studentText,
       currentSession: {
         imageName: input.detail.session.imageName,
         imagePrompt: input.detail.session.imagePrompt,
         status: input.detail.session.status
       },
-      recentHistory: input.detail.events.slice(-14).map((event) => ({
-        message: event.message,
-        value: event.value
-      })),
-      task:
-        "Choose the next tutor utterance for a one-step-at-a-time homework tutoring session. If this is the first image turn, orient to what the problem asks, then ask the first tiny question. If the student answered, check only that answer and either confirm, hint, or ask one next question."
+      // Events are stored newest-first; take the 14 most recent and present them
+      // oldest-to-newest so the model reads the conversation in order.
+      recentHistory: input.detail.events
+        .slice(0, 14)
+        .reverse()
+        .map((event) => ({
+          message: event.message,
+          value: event.value
+        }))
     },
     null,
     2
   );
 }
 
-const lessonControllerInstructions = `${tutorPolicy.instructions}
+function tutorActionInstructions(phase: SessionPhase, rejectionReasons: string[]): string {
+  const allowed = allowedMoves(phase).join(", ");
+  const forbidden = forbiddenMoves(phase).join(", ");
+  const retry = rejectionReasons.length
+    ? `\n\nYour previous attempt was rejected for these reasons:\n- ${rejectionReasons.join("\n- ")}\nChoose a different move or rephrase so it passes.`
+    : "";
 
-You are no longer speaking freely. You are a lesson controller for a voice tutor.
+  return `${tutorPolicy.instructions}
+
+You are the move generator for a server-enforced tutoring state machine. The server owns the phase; you only choose the next move and phrase it.
+
+Current phase: "${phase}".
+Moves you may use this phase: ${allowed}.
+Never use these moves: ${forbidden} — they solve or reveal the answer.
 
 Hard rules:
 - Return only the requested JSON schema.
-- spokenUtterance is the exact sentence(s) that will be spoken aloud.
-- spokenUtterance must be no more than 32 words.
-- Give exactly one small next step, one question, or one hint.
-- Never reveal the final answer or full solution path upfront.
-- If the student is wrong or stuck, give a smaller hint, not the answer.
-- If this is the first image turn, briefly name what the problem is asking, then ask the first question.
-- End spokenUtterance in a way that clearly waits for the student.
-- Keep hiddenState private; it may include your internal estimate of the problem and next step, but never the full final answer unless absolutely needed for safety checking.`;
+- "move" must be one of the allowed moves above.
+- "spokenUtterance" is the exact words spoken aloud: at most 32 words, exactly one cognitive demand (one question or one small step), ending so it clearly waits for the student. Never reveal the final answer.
+- "nextPhase" is where the session should go next; keep it at "${phase}" unless the student is ready to move on.${retry}`;
+}
 
-const lessonControllerJsonSchema = {
-  additionalProperties: false,
-  properties: {
-    hiddenState: { type: "string" },
-    phase: {
-      enum: ["orient", "ask_step", "check_answer", "hint", "advance", "wrap"],
-      type: "string"
-    },
-    safetyNotes: { type: "string" },
-    spokenUtterance: { type: "string" },
-    studentStatus: {
-      enum: ["unknown", "correct", "partial", "stuck"],
-      type: "string"
-    },
-    tutorAction: {
-      enum: ["orient", "ask", "hint", "confirm", "wrap"],
-      type: "string"
-    }
-  },
-  required: ["phase", "studentStatus", "spokenUtterance", "tutorAction", "hiddenState", "safetyNotes"],
-  type: "object"
-};
-
-function lessonControllerTurnFromJson(value: JsonValue): LessonControllerTurn {
-  const record = asRecord(value);
+function proposedTutorActionJsonSchema(phase: SessionPhase): Record<string, JsonValue> {
   return {
-    hiddenState: asStringValue(record.hiddenState, "hiddenState"),
-    phase: asLessonPhase(record.phase),
-    safetyNotes: asStringValue(record.safetyNotes, "safetyNotes"),
-    spokenUtterance: asRequiredText(record.spokenUtterance, "spokenUtterance"),
-    studentStatus: asStudentStatus(record.studentStatus),
-    tutorAction: asTutorAction(record.tutorAction)
+    additionalProperties: false,
+    properties: {
+      move: { enum: [...allowedMoves(phase)], type: "string" },
+      nextPhase: { enum: sessionPhases.filter((candidate) => canTransition(phase, candidate)), type: "string" },
+      spokenUtterance: { type: "string" }
+    },
+    required: ["move", "nextPhase", "spokenUtterance"],
+    type: "object"
   };
 }
 
-function toPublicLessonTurn(lesson: LessonControllerTurn): PublicLessonTurn {
+const proposableMoves: readonly ProposedMove[] = [...tutorMoves, ...gateForbiddenMoves];
+
+function proposedTutorActionFromJson(value: JsonValue, phase: SessionPhase): ProposedTutorAction {
+  const record = asRecord(value);
+  const move = asProposedMove(record.move);
+  const spokenUtterance = asRequiredText(record.spokenUtterance, "spokenUtterance");
+  const nextPhase = asOptionalSessionPhase(record.nextPhase);
+
+  const action: ProposedTutorAction = { move, phase, spokenUtterance };
+  if (nextPhase) {
+    action.statePatch = { nextPhase };
+  }
+
+  return action;
+}
+
+function asProposedMove(value: JsonValue | undefined): ProposedMove {
+  if (typeof value === "string" && proposableMoves.some((move) => move === value)) {
+    return value as ProposedMove;
+  }
+
+  throw new Error("Invalid move");
+}
+
+function asOptionalSessionPhase(value: JsonValue | undefined): SessionPhase | undefined {
+  if (typeof value === "string" && sessionPhases.some((candidate) => candidate === value)) {
+    return value as SessionPhase;
+  }
+
+  return undefined;
+}
+
+// The client renders the legacy six-phase lesson shape; project the canonical turn
+// onto it so the existing pipeline keeps working while the contract grows underneath.
+// Both maps are typed as exhaustive Records, so adding a phase or move is a compile
+// error here until its projection is declared — no silent fall-through to a default.
+const lessonPhaseBySessionPhase: Record<SessionPhase, LessonPhase> = {
+  session_open: "orient",
+  capture_parse: "orient",
+  frame_task: "orient",
+  activate_prior: "orient",
+  plan_first_step: "ask_step",
+  step_loop: "ask_step",
+  answer_check: "check_answer",
+  memory_write: "wrap",
+  transfer_check: "advance",
+  wrap_up: "wrap"
+};
+
+const legacyTutorActionByMove: Record<ProposedMove, PublicLessonTurn["tutorAction"]> = {
+  rapport_check: "orient",
+  recall_prior: "orient",
+  clarify_context: "orient",
+  three_reads_1: "ask",
+  three_reads_2: "ask",
+  three_reads_3: "ask",
+  restate_prompt: "ask",
+  elicit: "ask",
+  scaffold_hint: "hint",
+  precision_check: "ask",
+  feedback_with_why: "confirm",
+  model_micro_step: "hint",
+  fade: "hint",
+  transfer_check: "ask",
+  wrap: "wrap",
+  reset: "orient",
+  safety_boundary: "orient",
+  escalate: "orient",
+  // Leak markers never reach a validated turn, but the map must stay exhaustive.
+  solve: "ask",
+  final_answer: "ask",
+  calculation_hint: "ask",
+  check_answer: "ask"
+};
+
+function projectToPublicLesson(action: ProposedTutorAction): PublicLessonTurn {
   return {
-    phase: lesson.phase,
-    spokenUtterance: lesson.spokenUtterance,
-    studentStatus: lesson.studentStatus,
-    tutorAction: lesson.tutorAction
+    phase: lessonPhaseBySessionPhase[action.phase],
+    spokenUtterance: action.spokenUtterance,
+    // No assessment until the separate verifier (M4); the tutor never self-grades.
+    studentStatus: "unknown",
+    tutorAction: legacyTutorActionByMove[action.move]
   };
 }
 
@@ -487,51 +615,10 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
 
-function asStringValue(value: JsonValue | undefined, key: string): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  throw new Error(`Missing ${key}`);
-}
-
 function asRequiredText(value: JsonValue | undefined, key: string): string {
-  const text = asStringValue(value, key);
-
-  if (!text.trim()) {
+  if (typeof value !== "string" || !value.trim()) {
     throw new Error(`Missing ${key}`);
   }
 
-  return text;
-}
-
-function asLessonPhase(value: JsonValue | undefined): LessonControllerTurn["phase"] {
-  if (
-    value === "orient" ||
-    value === "ask_step" ||
-    value === "check_answer" ||
-    value === "hint" ||
-    value === "advance" ||
-    value === "wrap"
-  ) {
-    return value;
-  }
-
-  throw new Error("Invalid phase");
-}
-
-function asStudentStatus(value: JsonValue | undefined): LessonControllerTurn["studentStatus"] {
-  if (value === "unknown" || value === "correct" || value === "partial" || value === "stuck") {
-    return value;
-  }
-
-  throw new Error("Invalid studentStatus");
-}
-
-function asTutorAction(value: JsonValue | undefined): LessonControllerTurn["tutorAction"] {
-  if (value === "orient" || value === "ask" || value === "hint" || value === "confirm" || value === "wrap") {
-    return value;
-  }
-
-  throw new Error("Invalid tutorAction");
+  return value;
 }

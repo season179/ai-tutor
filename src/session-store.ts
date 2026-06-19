@@ -7,8 +7,27 @@ import type {
   TutorSessionSummary,
   UpdateTutorSessionRequest
 } from "./session-types.js";
+import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
+
+/** The server-owned phase state a tutoring turn advances to. */
+export type SessionPhaseAdvance = {
+  currentPhase: SessionPhase;
+  gateStatus: ComprehensionGateStatus | null;
+  supportLevel: SupportLevel;
+};
 
 export type SessionStore = {
+  /**
+   * Advance the authoritative phase state, guarded by an optimistic lock on the
+   * expected current phase. Returns the updated record, or null if the session is
+   * gone or another writer already moved it off `expectedPhase` (a lost race).
+   */
+  advanceSessionPhase(
+    ownerKey: string,
+    sessionId: string,
+    expectedPhase: SessionPhase,
+    advance: SessionPhaseAdvance
+  ): Promise<TutorSessionRecord | null>;
   appendEvent(ownerKey: string, sessionId: string, request: AppendSessionEventRequest): Promise<SessionEventRecord>;
   createSession(ownerKey: string, request?: CreateTutorSessionRequest): Promise<TutorSessionRecord>;
   getSession(ownerKey: string, sessionId: string): Promise<TutorSessionDetail | null>;

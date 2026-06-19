@@ -12,7 +12,10 @@ import type {
 import type { ExtractionOutcome } from "./problem-context/problem-context-types.js";
 import { isJsonObject } from "./schema-parser.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import { initialPhase } from "./phase-policy.js";
+import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
+import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "./tutor-action.js";
 
 type StoredSession = TutorSessionRecord & {
   events: SessionEventRecord[];
@@ -46,6 +49,21 @@ function parseJsonOrNull(value: string | null): unknown {
   } catch {
     return null;
   }
+}
+
+function parseSessionPhase(value: unknown): SessionPhase {
+  return sessionPhases.includes(value as SessionPhase) ? (value as SessionPhase) : initialPhase;
+}
+
+function parseGateStatus(value: string | null): ComprehensionGateStatus | null {
+  return value && comprehensionGateStatuses.includes(value as ComprehensionGateStatus)
+    ? (value as ComprehensionGateStatus)
+    : null;
+}
+
+function parseSupportLevel(value: unknown): SupportLevel {
+  const level = Number(value ?? 0);
+  return Number.isInteger(level) && level >= 0 && level <= 4 ? (level as SupportLevel) : 0;
 }
 
 function parseExtractionOutcome(value: string | null): ExtractionOutcome | null {
@@ -92,8 +110,10 @@ function createTutorSessionRecord(
 ): TutorSessionRecord {
   return {
     createdAt,
+    currentPhase: initialPhase,
     extractionNotes: null,
     extractionOutcome: null,
+    gateStatus: null,
     id,
     imageMeta: null,
     imageName: null,
@@ -102,6 +122,7 @@ function createTutorSessionRecord(
     ownerKey,
     promptConfirmed: false,
     status: "draft",
+    supportLevel: 0,
     title: request.title?.trim() || defaultTitle(createdAt),
     updatedAt: createdAt
   };
@@ -125,6 +146,25 @@ function createSessionEventRecord(
 export class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, StoredSession>();
   private nextEventId = 1;
+
+  async advanceSessionPhase(
+    ownerKey: string,
+    sessionId: string,
+    expectedPhase: SessionPhase,
+    advance: SessionPhaseAdvance
+  ): Promise<TutorSessionRecord | null> {
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    if (!session || session.currentPhase !== expectedPhase) {
+      return null;
+    }
+
+    session.currentPhase = advance.currentPhase;
+    session.gateStatus = advance.gateStatus;
+    session.supportLevel = advance.supportLevel;
+    session.updatedAt = nowIso();
+
+    return this.toRecord(session);
+  }
 
   async appendEvent(
     ownerKey: string,
@@ -227,8 +267,10 @@ export class MemorySessionStore implements SessionStore {
 export function mapD1SessionRow(row: Record<string, unknown>): TutorSessionRecord {
   return {
     createdAt: String(row.created_at),
+    currentPhase: parseSessionPhase(row.current_phase),
     extractionNotes: rowStringOrNull(row.extraction_notes),
     extractionOutcome: parseExtractionOutcome(rowStringOrNull(row.extraction_outcome)),
+    gateStatus: parseGateStatus(rowStringOrNull(row.gate_status)),
     id: String(row.id),
     imageMeta: parseImageMeta(rowStringOrNull(row.image_meta_json)),
     imageName: rowStringOrNull(row.image_name),
@@ -237,6 +279,7 @@ export function mapD1SessionRow(row: Record<string, unknown>): TutorSessionRecor
     ownerKey: String(row.owner_key),
     promptConfirmed: Number(row.prompt_confirmed ?? 0) === 1,
     status: row.status as TutorSessionStatus,
+    supportLevel: parseSupportLevel(row.current_support_level),
     title: String(row.title),
     updatedAt: String(row.updated_at)
   };

@@ -8,7 +8,8 @@ import type {
   UpdateTutorSessionRequest
 } from "./session-types.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
-import { sessionStoreNotFoundError, type SessionStore } from "./session-store.js";
+import { sessionStoreNotFoundError, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
+import type { SessionPhase } from "./tutor-action.js";
 import {
   createSessionEventRecord,
   createTutorSessionRecord,
@@ -20,7 +21,7 @@ import {
 } from "./memory-session-store.js";
 
 const tutorSessionColumns =
-  "id, owner_key, title, status, image_prompt, image_name, image_meta_json, image_object_key, extraction_outcome, extraction_notes, prompt_confirmed, created_at, updated_at";
+  "id, owner_key, title, status, image_prompt, image_name, image_meta_json, image_object_key, extraction_outcome, extraction_notes, prompt_confirmed, created_at, updated_at, current_phase, gate_status, current_support_level";
 
 function d1Rows(result: D1Result): Record<string, unknown>[] {
   return (result.results ?? []) as Record<string, unknown>[];
@@ -28,6 +29,30 @@ function d1Rows(result: D1Result): Record<string, unknown>[] {
 
 export class D1SessionStore implements SessionStore {
   constructor(private readonly db: D1Database) {}
+
+  async advanceSessionPhase(
+    ownerKey: string,
+    sessionId: string,
+    expectedPhase: SessionPhase,
+    advance: SessionPhaseAdvance
+  ): Promise<TutorSessionRecord | null> {
+    const updatedAt = nowIso();
+    const result = await this.db
+      .prepare(
+        `UPDATE tutor_sessions
+         SET current_phase = ?, gate_status = ?, current_support_level = ?, updated_at = ?
+         WHERE id = ? AND owner_key = ? AND current_phase = ?`
+      )
+      .bind(advance.currentPhase, advance.gateStatus, advance.supportLevel, updatedAt, sessionId, ownerKey, expectedPhase)
+      .run();
+
+    if ((result.meta.changes ?? 0) !== 1) {
+      return null;
+    }
+
+    const row = await this.getOwnedSessionRow(ownerKey, sessionId);
+    return row ? mapD1SessionRow(row) : null;
+  }
 
   async appendEvent(
     ownerKey: string,
@@ -81,7 +106,7 @@ export class D1SessionStore implements SessionStore {
     await this.db
       .prepare(
         `INSERT INTO tutor_sessions (${tutorSessionColumns})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         session.id,
@@ -96,7 +121,10 @@ export class D1SessionStore implements SessionStore {
         session.extractionNotes,
         session.promptConfirmed ? 1 : 0,
         session.createdAt,
-        session.updatedAt
+        session.updatedAt,
+        session.currentPhase,
+        session.gateStatus,
+        session.supportLevel
       )
       .run();
 

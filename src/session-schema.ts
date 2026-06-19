@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { extractionOutcomes } from "./problem-context/problem-context-types.js";
+import { comprehensionGateStatuses, sessionPhases } from "./tutor-action.js";
 import type {
   AppendSessionEventRequest,
   CreateTutorSessionRequest,
@@ -59,14 +60,17 @@ const tutorSessionSummarySchema = z.object({
 }) satisfies z.ZodType<TutorSessionSummary>;
 
 const tutorSessionRecordSchema = tutorSessionSummarySchema.extend({
+  currentPhase: z.enum(sessionPhases),
   extractionNotes: z.string().nullable(),
   extractionOutcome: extractionOutcomeSchema.nullable(),
+  gateStatus: z.enum(comprehensionGateStatuses).nullable(),
   imageMeta: sessionImageMetaSchema.nullable(),
   imageName: z.string().nullable(),
   imageObjectKey: z.string().nullable(),
   imagePrompt: z.string().nullable(),
   ownerKey: z.string().min(1),
-  promptConfirmed: z.boolean()
+  promptConfirmed: z.boolean(),
+  supportLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
 }) satisfies z.ZodType<TutorSessionRecord>;
 
 const sessionEventRecordSchema = z.object({

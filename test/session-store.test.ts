@@ -85,6 +85,51 @@ test("MemorySessionStore transferOwnerSessions moves sessions and preserves even
   assert.equal(detail.events[0]?.message, "Event A1");
 });
 
+test("MemorySessionStore starts sessions at the opening phase with support off", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const session = await store.createSession(ownerKey);
+
+  assert.equal(session.currentPhase, "session_open");
+  assert.equal(session.gateStatus, null);
+  assert.equal(session.supportLevel, 0);
+});
+
+test("advanceSessionPhase moves the phase when the expected phase matches", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const session = await store.createSession(ownerKey);
+
+  const advanced = await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
+    currentPhase: "frame_task",
+    gateStatus: "needs_restatement",
+    supportLevel: 0
+  });
+
+  assert.ok(advanced);
+  assert.equal(advanced?.currentPhase, "frame_task");
+  assert.equal(advanced?.gateStatus, "needs_restatement");
+
+  const detail = await store.getSession(ownerKey, session.id);
+  assert.equal(detail?.session.currentPhase, "frame_task");
+});
+
+test("advanceSessionPhase refuses to advance when the expected phase is stale", async () => {
+  const store = new MemorySessionStore();
+  const ownerKey = "access:user-a";
+  const session = await store.createSession(ownerKey);
+
+  const result = await store.advanceSessionPhase(ownerKey, session.id, "step_loop", {
+    currentPhase: "answer_check",
+    gateStatus: null,
+    supportLevel: 0
+  });
+
+  assert.equal(result, null);
+  const detail = await store.getSession(ownerKey, session.id);
+  assert.equal(detail?.session.currentPhase, "session_open");
+});
+
 test("mapD1SessionRow normalizes optional image columns", () => {
   const session = mapD1SessionRow({
     created_at: "2026-06-17T01:02:03.000Z",

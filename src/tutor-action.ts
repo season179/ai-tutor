@@ -57,23 +57,29 @@ export type TutorMove = (typeof tutorMoves)[number];
 /**
  * Leak/solving markers that are never legal tutor moves. They appear only in a
  * phase's `forbiddenMoves` list so the model is told not to emit them and the
- * validator can name the violation precisely.
+ * validator can name the violation precisely. Single source of truth — the
+ * `GateForbiddenMove` union is derived from this array.
  */
-export type GateForbiddenMove = "solve" | "final_answer" | "calculation_hint" | "check_answer";
+export const gateForbiddenMoves = ["solve", "final_answer", "calculation_hint", "check_answer"] as const;
+
+export type GateForbiddenMove = (typeof gateForbiddenMoves)[number];
 
 /** What the model may put in `move`: a legal move, or (caught by the validator) a leak marker. */
 export type ProposedMove = TutorMove | GateForbiddenMove;
 
 export type SupportLevel = 0 | 1 | 2 | 3 | 4;
 
-export type ComprehensionGateStatus =
-  | "needs_image"
-  | "needs_question_confirmation"
-  | "needs_context_read" // Three Reads #1
-  | "needs_quantity_read" // Three Reads #2
-  | "needs_target_read" // Three Reads #3
-  | "needs_restatement"
-  | "complete";
+export const comprehensionGateStatuses = [
+  "needs_image",
+  "needs_question_confirmation",
+  "needs_context_read", // Three Reads #1
+  "needs_quantity_read", // Three Reads #2
+  "needs_target_read", // Three Reads #3
+  "needs_restatement",
+  "complete"
+] as const;
+
+export type ComprehensionGateStatus = (typeof comprehensionGateStatuses)[number];
 
 export type StudentAssessmentStatus =
   | "unknown"
@@ -97,7 +103,6 @@ export type ProposedTutorAction = {
   spokenUtterance: string;
   statePatch?: {
     nextPhase?: SessionPhase;
-    gateStatus?: ComprehensionGateStatus;
   };
 };
 
