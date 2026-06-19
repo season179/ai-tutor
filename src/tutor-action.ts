@@ -107,39 +107,24 @@ export type ProposedTutorAction = {
 };
 
 /**
- * The full target contract (see `docs/tutoring-workflow.md`). Documented here as the
- * shape M1 grows toward; populated progressively across milestones.
+ * The full target contract (see `docs/tutoring-workflow.md`), trimmed to the fields
+ * actually wired today: identity + the move, the verifier-owned `assessment` (M4), and
+ * the server-owned `statePatch` the phase machine and gate-checker (M3) drive.
+ *
+ * Deliberately not modeled yet — these belong to capabilities the build plan still
+ * defers, and were removed so the type reflects reality rather than aspiration:
+ * `language`/code-switching (trilingual), `waitPolicy` (timing), `targetCognitiveWork`
+ * /`expectedStudentResponse` (the pedagogy-spec compiler), `masteryEvidence` (the
+ * externalized learner model), and `safety` (the moderation/guardian surface).
  */
 export type TutorAction = {
-  schemaVersion: 1;
+  schemaVersion: typeof tutorActionSchemaVersion;
   sessionId: string;
   turnId: string;
   phase: SessionPhase;
   move: ProposedMove;
   supportLevel: SupportLevel;
-  targetCognitiveWork:
-    | "notice"
-    | "restate"
-    | "choose_first_step"
-    | "explain_why"
-    | "calculate_one_step"
-    | "check_work"
-    | "summarize";
-  expectedStudentResponse:
-    | "spoken_phrase"
-    | "spoken_reasoning"
-    | "one_number"
-    | "choice"
-    | "independent_attempt"
-    | "none";
   spokenUtterance: string;
-  language: {
-    spokenLanguage: string;
-    termSet: string;
-    targetOutputLanguage: string;
-    codeSwitchPolicy: "mirror" | "stable";
-  };
-  waitPolicy: { minimumQuietMs: number; nudgeAfterMs: number; hintAfterMs: number };
   assessment: {
     studentStatus: StudentAssessmentStatus;
     misconceptionKey?: string;
@@ -149,9 +134,7 @@ export type TutorAction = {
     nextPhase?: SessionPhase;
     gateStatus?: ComprehensionGateStatus;
     supportLevelDelta?: -1 | 0 | 1;
-    masteryEvidence?: Array<{ skillKey: string; kind: "success" | "struggle" | "misconception" }>;
   };
-  safety: { kind: "none" | "boundary" | "escalate"; reason?: string };
 };
 
 export const tutorActionSchemaVersion = 1 as const;

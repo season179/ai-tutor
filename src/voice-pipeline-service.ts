@@ -26,6 +26,7 @@ import type { StepVerifierVerdict } from "./step-verifier.js";
 import {
   gateForbiddenMoves,
   sessionPhases,
+  tutorActionSchemaVersion,
   tutorMoves,
   type ProposedMove,
   type ProposedTutorAction,
@@ -265,17 +266,25 @@ export async function handleVoicePipelineTurnWithStore(
   await store.appendEvent(requestContext.ownerKey, request.sessionId, {
     message: tutorTurnEventMessage,
     value: {
+      // Stamp the contract version so a persisted turn can be read back against the
+      // schema it was written under as the TutorAction shape evolves across milestones.
+      schemaVersion: tutorActionSchemaVersion,
       lesson: publicLesson,
       move: action.move,
       phase: fromPhase,
       nextPhase: toPhase,
+      // The server-owned gate status this turn advanced to (statePatch.gateStatus),
+      // recorded alongside the move so the audit trail carries the gate state, not just the phase.
+      gateStatus,
       text: action.spokenUtterance,
       verdict:
         checkerVerdict === null
           ? null
           : {
               chip: checkerVerdict.chip,
-              label: checkerVerdict.chipLabel
+              label: checkerVerdict.chipLabel,
+              studentStatus: checkerVerdict.studentStatus,
+              misconceptionKey: checkerVerdict.misconceptionKey
             }
     }
   });

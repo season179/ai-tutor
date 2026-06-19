@@ -141,6 +141,9 @@ test("projects a validated turn to the legacy public lesson shape and advances t
     const tutorTurn = detail?.events.find((event) => event.message === "Tutor turn");
     assert.ok(tutorTurn);
     assert.equal(JSON.stringify(tutorTurn.value).includes("hiddenState"), false);
+    // The persisted turn carries the contract version and the server-owned gate state.
+    assert.equal((tutorTurn.value as { schemaVersion?: number }).schemaVersion, 1);
+    assert.equal("gateStatus" in (tutorTurn.value as object), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
