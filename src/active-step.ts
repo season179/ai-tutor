@@ -135,9 +135,11 @@ const additionCuePattern =
   /\b(?:altogether|in total|in all|combined|total number|sum of|jumlah|semua sekali|kesemua)\b/i;
 
 // "more"/"less" alone are ambiguous (gained-N-more vs N-more-than), so only the
-// comparison and remainder framings count as a subtraction cue.
+// comparison and remainder framings count as a subtraction cue. Bare "left" carries a
+// spatial sense ("on the left", "the left column") that is NOT subtraction, so it only
+// counts when it isn't the direction: not preceded by "the" and not naming a side/part.
 const subtractionCuePattern =
-  /\b(?:left over|left|remaining|remain|fewer|difference|how (?:many|much) more|how many fewer|baki|tinggal|berapa lagi)\b/i;
+  /\b(?:left over|remaining|remain|fewer|difference|how (?:many|much) more|how many fewer|baki|tinggal|berapa lagi)\b|(?<!\bthe\s)\bleft\b(?!\s+(?:side|column|hand|page|corner))/i;
 
 // Grouping / multiplicative / sharing language means the answer is a product or quotient,
 // not a sum or difference — even when an "altogether"/"in total" cue is also present
@@ -225,22 +227,22 @@ function requiresMalayPrompt(frame: ProblemFrame): boolean {
 
 export function deriveFirstCheckableStep(frame: ProblemFrame): ActiveStep | null {
   const friendCount = parseFriendCount(frame);
-  if (!friendCount) {
-    return null;
-  }
-
   const total = parseTotalQuantity(frame);
-  const distractorNudges: Record<string, string> = {};
-
-  if (total !== null) {
-    distractorNudges[String(total)] =
-      "That's all the stickers — right now we're only giving out 1 each. How many friends get one?";
+  // The "give each friend 1 sticker" first step only models an equal-sharing problem: a
+  // group sharing a recognized pool of items. Without both a sharer count and a total to
+  // share, this isn't a sharing problem — defer to the LLM verifier rather than grade an
+  // unrelated problem (that merely mentions "friends") against the sharer count.
+  if (!friendCount || total === null) {
+    return null;
   }
 
   return {
     ask: "Give each friend 1 sticker first. How many stickers is that?",
     defaultWrongNudge: "Not quite — think about how many friends are sharing.",
-    distractorNudges,
+    distractorNudges: {
+      [String(total)]:
+        "That's all the stickers — right now we're only giving out 1 each. How many friends get one?"
+    },
     expectedAnswers: [friendCount],
     scaffoldAid: `${friendCount} friends · 1 sticker each`
   };

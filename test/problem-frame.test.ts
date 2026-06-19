@@ -58,6 +58,39 @@ test("scrubComputedSolutionFromText removes a worked answer but keeps the questi
   assert.ok(cleaned.includes("4 friends"), "givens should be preserved");
 });
 
+test("scrubComputedSolutionFromText preserves a genuine equation problem", () => {
+  // "= 14" is the problem here (a variable precedes "="), not a worked answer to strip.
+  assert.equal(scrubComputedSolutionFromText("Solve 2x = 14"), "Solve 2x = 14");
+  assert.equal(scrubComputedSolutionFromText("Find x: 3x = 12."), "Find x: 3x = 12.");
+});
+
+test("scrubComputedSolutionFromText strips a worked answer that isn't on the last line", () => {
+  const cleaned = scrubComputedSolutionFromText("Each friend gets 24 / 4 = 6\nWrite your answer below.");
+
+  assert.ok(!/=\s*6\b/.test(cleaned), "a worked answer mid-text is stripped, not just at end of string");
+  assert.ok(cleaned.includes("Write your answer below."), "the rest of the field is kept");
+});
+
+test("frameContainsComputedSolution does not flag a variable equation as a worked answer", () => {
+  const frame = buildProblemFrame({
+    confidence: "high",
+    diagramDescription: null,
+    extractedText: "Solve 2x = 14.",
+    languageIsSubject: false,
+    likelySkillKeys: [],
+    notes: null,
+    outcome: "extracted",
+    problemType: "equation",
+    quantities: [],
+    question: "Solve 2x = 14.",
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: "x"
+  });
+
+  assert.equal(frameContainsComputedSolution(frame), false);
+});
+
 test("scrubComputedSolutionFromFrame drops a numeric-only target and keeps givens", () => {
   const frame = buildProblemFrame({
     confidence: "high",

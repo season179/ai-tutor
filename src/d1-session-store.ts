@@ -80,10 +80,14 @@ export class D1SessionStore implements SessionStore {
     const { advance, expectedPhase } = request;
     const updatedAt = nowIso();
 
-    // The optimistic-locked advance is the first statement. Every dependent write is gated
-    // on the row now carrying this turn's phase AND timestamp, so when the advance loses the
-    // race (0 rows changed) the inserts match nothing — the whole batch is a no-op. D1 runs
-    // the array as one transaction, so a partial turn (phase moved, events lost) can't occur.
+    // The expected-phase advance is the first statement. Every dependent write is gated on the
+    // row now carrying this turn's phase AND timestamp, so a turn that finds the session already
+    // moved off `expectedPhase` changes 0 rows and its inserts match nothing — the whole batch is
+    // a no-op. D1 runs the array as one transaction, so a partial turn (phase moved, events lost)
+    // can't occur. NOTE: the lock only catches races that change the phase. Two turns that stay in
+    // the same phase (e.g. step_loop→step_loop) both match `current_phase = expectedPhase` and both
+    // commit; the per-session SessionRuntime Durable Object serialization is what prevents that in
+    // production. A monotonic per-session version column would close it at the store layer.
     const guard = `EXISTS (SELECT 1 FROM tutor_sessions WHERE id = ? AND current_phase = ? AND updated_at = ?)`;
     const guardBinds = [sessionId, advance.currentPhase, updatedAt] as const;
 

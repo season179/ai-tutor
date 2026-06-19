@@ -124,7 +124,9 @@ export async function handleVoicePipelineTurnWithStore(
   const studentText = await readStudentText(request, options);
   const fromPhase = detail.session.currentPhase;
   let gateStatus = detail.session.gateStatus;
-  const problemContext = await store.getProblemContext(requestContext.ownerKey, request.sessionId);
+  // getSession already loaded the problem context for this session — reuse it instead of a
+  // second store round-trip.
+  const problemContext = detail.problemContext;
 
   let gateVerdict: GateCheckerVerdict | null = null;
   let gateStageChecked: GateStage | null = null;

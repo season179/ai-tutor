@@ -119,6 +119,57 @@ test("deriveFinalAnswerCheck defers (null) when a total cue hides a multiplicati
   assert.equal(step, null, "5 + 4 would be a confident wrong grade — the LLM track must handle this");
 });
 
+test("deriveFinalAnswerCheck defers (null) when 'left' is spatial, not a remainder", () => {
+  const step = deriveFinalAnswerCheck(
+    wordProblem({
+      extractedText: "Tom has 6 marbles on the left and 9 marbles on the right.",
+      quantities: [
+        { label: "left", raw: "6" },
+        { label: "right", raw: "9" }
+      ],
+      visibleQuestion: "How many marbles does Tom have?"
+    })
+  );
+
+  // "on the left" is a direction, not subtraction; with no real operation cue the
+  // deterministic track must defer rather than grade 9 − 6 as the answer.
+  assert.equal(step, null);
+});
+
+test("deriveFinalAnswerCheck still reads a genuine remainder 'left' as subtraction", () => {
+  const step = deriveFinalAnswerCheck(
+    wordProblem({
+      extractedText: "There were 12 apples. 7 were eaten. How many apples are left?",
+      quantities: [
+        { label: "apples", raw: "12" },
+        { label: "eaten", raw: "7" }
+      ],
+      visibleQuestion: "How many apples are left?"
+    })
+  );
+
+  assert.ok(step);
+  assert.deepEqual(step.expectedAnswers, [5]);
+  assert.equal(step.scaffoldAid, "12 − 7");
+});
+
+test("deriveFirstCheckableStep returns null when there is no pool to share", () => {
+  // Mentions friends but names no recognized total, so it is not an equal-sharing problem.
+  const step = deriveFirstCheckableStep(
+    wordProblem({
+      extractedText: "Tom and his 4 friends each buy 10 cards.",
+      quantities: [
+        { label: "friends", raw: "4" },
+        { label: "cards each", raw: "10" }
+      ],
+      relationships: ["Tom and his 4 friends"],
+      visibleQuestion: "How many cards do they buy in total?"
+    })
+  );
+
+  assert.equal(step, null);
+});
+
 test("deriveFinalAnswerCheck defers (null) with three givens or no operation cue", () => {
   const threeGivens = deriveFinalAnswerCheck(
     wordProblem({

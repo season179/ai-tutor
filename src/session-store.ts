@@ -43,11 +43,10 @@ export type AppendComprehensionCheckRequest = {
 };
 
 /**
- * Everything one tutoring turn writes, committed as a single unit: the optimistic-locked
- * phase advance, the draft→active flip, the ordered event log entries, an optional
- * comprehension check, and an optional reflection. Bundling them lets the store commit the
- * whole turn atomically, so an isolate death can never advance the phase while losing the
- * events that explain the move.
+ * Everything one tutoring turn writes, committed as a single unit: the phase advance, the
+ * draft→active flip, the ordered event log entries, an optional comprehension check, and an
+ * optional reflection. Bundling them lets the store commit the whole turn atomically, so an
+ * isolate death can never advance the phase while losing the events that explain the move.
  */
 export type CommitTurnRequest = {
   activate: boolean;
@@ -77,9 +76,12 @@ export type SessionStore = {
   ): Promise<void>;
   appendEvent(ownerKey: string, sessionId: string, request: AppendSessionEventRequest): Promise<SessionEventRecord>;
   /**
-   * Commit a whole turn atomically, guarded by the same optimistic lock as
-   * `advanceSessionPhase`: returns the updated record, or null on a lost race (in which
-   * case nothing is written). All writes land together or not at all.
+   * Commit a whole turn atomically, guarded by the same expected-phase lock as
+   * `advanceSessionPhase`: all writes land together or not at all, and a turn that finds the
+   * session already moved off `expectedPhase` returns null without writing. The lock detects
+   * races that *change* the phase; concurrent turns that stay in the same phase (e.g. two
+   * step_loop turns) are serialized per session by the SessionRuntime Durable Object, not by
+   * this lock — outside that serialization a same-phase duplicate could still double-commit.
    */
   commitTurn(ownerKey: string, sessionId: string, request: CommitTurnRequest): Promise<TutorSessionRecord | null>;
   createSession(ownerKey: string, request?: CreateTutorSessionRequest): Promise<TutorSessionRecord>;

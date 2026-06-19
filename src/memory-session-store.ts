@@ -301,9 +301,9 @@ export class MemorySessionStore implements SessionStore {
     sessionId: string,
     request: CommitTurnRequest
   ): Promise<TutorSessionRecord | null> {
-    // The in-memory store runs single-threaded, so the optimistic-lock check plus the
-    // dependent writes are already effectively atomic; if the advance loses the race we
-    // bail before writing anything, mirroring the D1 batch's all-or-nothing guarantee.
+    // The in-memory store runs single-threaded, so the phase-lock check plus the dependent
+    // writes are already effectively atomic; if the advance can't move off the expected
+    // phase we bail before writing anything, mirroring the D1 batch's all-or-nothing shape.
     const advanced = await this.advanceSessionPhase(ownerKey, sessionId, request.expectedPhase, request.advance);
     if (!advanced) {
       return null;
@@ -328,7 +328,10 @@ export class MemorySessionStore implements SessionStore {
       });
     }
 
-    return advanced;
+    // Return the record as it stands after every write (the draft→active flip included),
+    // matching the D1 store's post-batch re-read so both stores report the same committed state.
+    const session = this.getOwnedSession(ownerKey, sessionId);
+    return session ? this.toRecord(session) : advanced;
   }
 
   async appendComprehensionCheck(

@@ -38,10 +38,16 @@ export type ProblemContextRecord = ProblemFrame & {
   updatedAt: string;
 };
 
+// A worked-answer "= N" is a computed result, e.g. "24 ÷ 4 = 6" or a "… = 6" scrawled after
+// the prompt. The `(?<![A-Za-z]\s*)` guard keeps a genuine equation problem ("Solve 2x = 14",
+// where a variable precedes "="), so it is detected/stripped only when the left side isn't a
+// variable. No `$` anchor — a worked answer mid-text or on an earlier line must still match.
+const computedAnswerEquationPattern = /(?<![A-Za-z]\s*)=\s*[-+]?\$?\d+(?:\.\d+)?/;
+
 const computedSolutionPatterns: readonly RegExp[] = [
   /\bthe (?:final )?answer is\s+[-+]?\$?\d/i,
   /\bthe answer['’]s\s+[-+]?\$?\d/i,
-  /\b=\s*[-+]?\$?\d+(?:\.\d+)?\s*$/i
+  computedAnswerEquationPattern
 ];
 
 const numericOnlyPattern = /^[-+]?\$?\d+(?:\.\d+)?$/;
@@ -71,10 +77,12 @@ export function frameContainsComputedSolution(frame: ProblemFrame): boolean {
 // Global variants of the detection patterns, for stripping every occurrence of a
 // worked answer out of free text. Givens are deliberately NOT touched (a "24" in
 // "24 stickers" is an input the child needs, not the answer) — only explicit
-// "the answer is N" / trailing "= N" fragments are removed.
+// "the answer is N" and computed "= N" fragments are removed. The "= N" pattern shares
+// the variable guard above so it scrubs worked answers anywhere in the text without
+// corrupting a "Solve 2x = 14" equation.
 const computedSolutionStripPatterns: readonly RegExp[] = [
   /\bthe (?:final )?answer(?:['’]s| is)\s+[-+]?\$?\d+(?:\.\d+)?/gi,
-  /=\s*[-+]?\$?\d+(?:\.\d+)?\s*$/g
+  new RegExp(computedAnswerEquationPattern.source, "g")
 ];
 
 /**
