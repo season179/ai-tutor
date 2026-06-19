@@ -782,4 +782,4 @@ Each step is independently shippable and de-risks the next:
 
 ---
 
-*Converged design by Claude (Opus 4.8) × OpenAI Codex, 2026-06-19. This document is the single source of reference; the human-friendly companion is [`tutoring-workflow.html`](./tutoring-workflow.html).*
+*Converged design by Claude (Opus 4.8) × OpenAI Codex, 2026-06-19. This document is the single source of reference; the human-friendly companion is [`tutoring-workflow.html`](./tutoring-workflow.html), and the locked visual design for the center-column tutoring UI is [`mockups/center-column.html`](./mockups/center-column.html).*
