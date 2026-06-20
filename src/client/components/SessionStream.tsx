@@ -16,26 +16,26 @@ type SessionStreamProps = {
  * empty and inert until the comprehension gate (M3) decides what we're finding.
  */
 export function SessionStream({ goalStatus, problemPin, turns, unknownTarget }: SessionStreamProps) {
-  const chipClass =
-    goalStatus === "complete"
-      ? "target-chip--complete"
-      : goalStatus === "framed"
-        ? "target-chip--framed"
-        : "target-chip--empty";
-
   return (
     <div className="cc-stream">
       {problemPin}
 
-      <div className="target-row">
-        <span className={classNames("target-chip", chipClass)}>
-          {goalStatus === "complete" ? <CheckStar /> : goalStatus === "framed" ? <TargetStar /> : null}
-          <span className="tlabel">
-            {goalStatus === "complete" ? "Found:" : goalStatus === "framed" ? "Find:" : "We need to find"}
+      {/* The north-star target stays hidden until the comprehension gate (M3) names
+          a goal: a chip with nothing in it is noise, not orientation. */}
+      {goalStatus !== "empty" ? (
+        <div className="target-row">
+          <span
+            className={classNames(
+              "target-chip",
+              goalStatus === "complete" ? "target-chip--complete" : "target-chip--framed"
+            )}
+          >
+            {goalStatus === "complete" ? <CheckStar /> : <TargetStar />}
+            <span className="tlabel">{goalStatus === "complete" ? "Found:" : "Find:"}</span>
+            {` ${unknownTarget ?? ""}`}
           </span>
-          {goalStatus === "empty" ? " ___" : ` ${unknownTarget ?? ""}`}
-        </span>
-      </div>
+        </div>
+      ) : null}
 
       {turns.length > 0 ? (
         <div className="transcript" aria-label="Conversation">

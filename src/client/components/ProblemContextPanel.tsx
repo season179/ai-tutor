@@ -210,18 +210,26 @@ export function ProblemContextPanel({
             onClick={openFilePicker}
             type="button"
           >
-            <ReplaceIcon />
-            Replace
+            <PhotoIcon />
+            Replace photo
           </button>
         </div>
       </div>
 
       <div className="pin-body">
-        {previewUrl ? (
-          <PhotoThumb onZoom={openZoom} src={previewUrl} />
-        ) : (
-          <div className="photo-rail photo-rail--loading" aria-hidden="true" />
-        )}
+        <div className="photo-col">
+          {previewUrl ? (
+            <>
+              <PhotoThumb onZoom={openZoom} src={previewUrl} />
+              <span className="photo-cap">
+                <ZoomIcon />
+                Tap to zoom
+              </span>
+            </>
+          ) : (
+            <div className="photo-rail photo-rail--loading" aria-hidden="true" />
+          )}
+        </div>
 
         <div className="rail-main">
           {isExtracting || isUploading ? (
@@ -232,10 +240,8 @@ export function ProblemContextPanel({
             </div>
           ) : (
             <>
-              <label className="sr-only" htmlFor="problem-question">
-                Extracted question
-              </label>
               <textarea
+                aria-label="Extracted question"
                 className="question"
                 disabled={isBusy}
                 id="problem-question"
@@ -274,9 +280,8 @@ export function ProblemContextPanel({
                   type="button"
                 >
                   <ReExtractIcon />
-                  Re-extract
+                  Read again
                 </button>
-                <div className="pin-actions-spacer" />
                 <button
                   className="pin-btn pin-btn--primary"
                   disabled={confirmDisabled}
@@ -407,6 +412,18 @@ function ReplaceIcon() {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
       <path d="M3 21v-5h5" />
+    </svg>
+  );
+}
+
+// A picture glyph — "swap the photo", visually distinct from the refresh arrows
+// of "Read again" so the two recovery paths can't be mistaken for each other.
+function PhotoIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="8.5" cy="10" r="1.6" />
+      <path d="M5 17l4.5-4 3 2.5L16 11l3 3" />
     </svg>
   );
 }

@@ -849,10 +849,33 @@ p {
 
 /* the photo: a rail in review, a thumbnail when folded */
 .pin-body {
-  align-items: stretch;
+  align-items: flex-start;
   display: flex;
-  gap: 0.95rem;
+  gap: 1.1rem;
   min-width: 0;
+}
+
+/* the photo and its "tap to zoom" caption travel together as a column */
+.photo-col {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.photo-cap {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 700;
+  gap: 0.28rem;
+  justify-content: center;
+}
+
+.photo-cap svg {
+  block-size: 0.78rem;
+  inline-size: 0.78rem;
 }
 
 .photo-rail,
@@ -867,9 +890,13 @@ p {
   transition: box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* A fixed 4:3 reference crop: legible at a glance, the full read lives in the
+   zoom dialog. Top-aligned (pin-body flex-start) so it never stretches into a
+   thin ribbon when the question runs long. */
 .photo-rail {
-  flex: 0 0 7.5rem;
-  inline-size: 7.5rem;
+  aspect-ratio: 4 / 3;
+  flex: 0 0 auto;
+  inline-size: 8.5rem;
 }
 
 .photo-rail--loading {
@@ -947,7 +974,8 @@ p {
   min-width: 0;
 }
 
-/* the question is the hero */
+/* the question is the hero: it fills its column so the right-aligned action
+   group sits flush under its trailing edge */
 .question {
   background: var(--surface-field);
   border: 1px solid var(--line-strong);
@@ -955,7 +983,6 @@ p {
   flex: 1;
   font-size: 1.04rem;
   line-height: 1.55;
-  max-width: 70ch;
   min-height: 5.5rem;
   resize: vertical;
 }
@@ -1016,14 +1043,13 @@ p {
   margin: 0;
 }
 
+/* Read again + Confirm travel together as one group at the right, under the
+   field — not spread edge to edge across an otherwise empty row. */
 .pin-actions {
   align-items: center;
   display: flex;
   gap: 0.6rem;
-}
-
-.pin-actions-spacer {
-  margin-inline-start: auto;
+  justify-content: flex-end;
 }
 
 .pin-btn {
@@ -1519,17 +1545,15 @@ pre {
   font-weight: 740;
   gap: 0.45rem;
   padding: 0.4rem 0.75rem;
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .target-chip .tlabel {
   color: var(--muted);
   font-weight: 700;
-}
-
-.target-chip--empty {
-  background: transparent;
-  border: 1.5px dashed var(--line-strong);
-  color: var(--muted);
 }
 
 .target-chip--framed {
