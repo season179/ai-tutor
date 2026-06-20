@@ -16,7 +16,6 @@ export {
   defaultTtsVoice,
   defaultTutorModel
 } from "./modules/voice/voice-pipeline-service.js";
-export { maxJsonRequestBodyBytes } from "./modules/sessions/session-handler.js";
 export {
   handleExtractQuestionRequest,
   handlePreviewUrlRequest,

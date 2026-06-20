@@ -1,4 +1,4 @@
-import { HttpError, sessionNotFoundHttpError } from "../../core/http-error.js";
+import { sessionNotFoundHttpError } from "../../core/http-error.js";
 import { initialGateStatus } from "../tutoring/phase-policy.js";
 import { problemFrameFromConfirmedPrompt } from "../problems/problem-frame.js";
 import {
@@ -14,9 +14,6 @@ import {
   type PublicTutorSessionRecord
 } from "./session-types.js";
 import type { RequestContext } from "../../core/request-context.js";
-import { readLimitedTextBody } from "../../core/read-limited-text.js";
-
-export const maxJsonRequestBodyBytes = 16_384;
 
 function requireSessionResult<T>(value: T | null): T {
   if (value === null) {
@@ -93,27 +90,5 @@ export async function appendSessionEvent(
     return await store.appendEvent(context.ownerKey, sessionId, request);
   } catch {
     throw sessionNotFoundHttpError();
-  }
-}
-
-export async function readJsonBody(request: Request, maxBytes = maxJsonRequestBodyBytes): Promise<unknown> {
-  const text = await readLimitedTextBody(
-    request.body,
-    maxBytes,
-    () => new HttpError(413, "Request body was too large")
-  );
-
-  if (text === null) {
-    return null;
-  }
-
-  if (!text) {
-    throw new HttpError(400, "Request body was empty");
-  }
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new HttpError(400, "Request body was not valid JSON");
   }
 }

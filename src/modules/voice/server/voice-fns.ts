@@ -6,7 +6,6 @@ import { HttpError } from "../../../core/http-error.js";
 import { createVoiceSessionWithStore } from "../voice-session-handler.js";
 import { handleVoicePipelineTurnWithStore } from "../voice-pipeline-service.js";
 import { parseVoicePipelineTurnRequest } from "../voice-session-schema.js";
-import type { ProcessTurnPayload } from "../../sessions/session-runtime-do.js";
 import {
   maxVoiceTurnBodyBytes,
   type CreateVoiceSessionRequest,
@@ -53,14 +52,18 @@ async function enforceVoiceRateLimit(): Promise<void> {
 }
 
 /**
- * Honor the `payloadLimitBytes` capability the session descriptor advertises. The
- * Start runtime owns body parsing, so this can only reject after the fact rather than
- * abort the stream early, but it still keeps an oversized turn out of the (expensive)
- * tutoring pipeline.
+ * Honor the `payloadLimitBytes` capability the session descriptor advertises. Measures
+ * the decoded payload (the base64 data-URLs plus any text) rather than `Content-Length`,
+ * which is absent on the `/_serverFn/*` RPC body and trivially spoofable. The Start
+ * runtime owns body parsing, so this can only reject after the fact rather than abort the
+ * stream early, but it still keeps an oversized turn out of the (expensive) tutoring pipeline.
  */
-function assertVoiceTurnWithinLimit(): void {
-  const length = Number(getRequest().headers.get("content-length"));
-  if (Number.isFinite(length) && length > maxVoiceTurnBodyBytes) {
+function assertVoiceTurnWithinLimit(turn: VoicePipelineTurnRequest): void {
+  const size =
+    (turn.audio?.dataUrl?.length ?? 0) +
+    (turn.image?.dataUrl?.length ?? 0) +
+    (turn.text?.length ?? 0);
+  if (size > maxVoiceTurnBodyBytes) {
     throw new HttpError(413, "Request body was too large");
   }
 }
@@ -77,7 +80,7 @@ export const voicePipelineTurnFn = createServerFn({ method: "POST" })
   .validator((input: VoicePipelineTurnRequest) => input)
   .handler(async ({ data }): Promise<VoicePipelineTurnResponse> => {
     await enforceVoiceRateLimit();
-    assertVoiceTurnWithinLimit();
+    assertVoiceTurnWithinLimit(data);
     const { context, store } = await authenticateServerRequest();
 
     // One Durable Object per session serializes turns and owns the hint timer; route
@@ -86,9 +89,7 @@ export const voicePipelineTurnFn = createServerFn({ method: "POST" })
     const sessionRuntime = workerEnv().SESSION_RUNTIME;
     if (sessionRuntime) {
       const parsed = parseVoicePipelineTurnRequest(data);
-      const stub = sessionRuntime.getByName(parsed.sessionId) as DurableObjectStub & {
-        processTurn(payload: ProcessTurnPayload): Promise<VoicePipelineTurnResponse>;
-      };
+      const stub = sessionRuntime.getByName(parsed.sessionId);
       return stub.processTurn({ body: data, context });
     }
 

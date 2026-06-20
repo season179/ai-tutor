@@ -15,6 +15,7 @@
     "src/modules/tutoring/phase-policy.ts",
     "src/modules/tutoring/tutor-action-validator.ts",
     "src/modules/sessions/hint-alarm.ts",
+    "src/modules/sessions/session-handler.ts",
     "src/modules/voice/voice-session-handler.ts",
     "src/client/lib/phase-rail.ts"
   ]
