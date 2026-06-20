@@ -12,6 +12,15 @@ export type AuthenticatedServerRequest = {
 };
 
 /**
+ * The raw Cloudflare Worker bindings, for server functions that need env beyond the
+ * auth/store wiring (R2 credentials, OpenAI config, …). Keeping the `cloudflare:workers`
+ * import confined to this server-only module means it never reaches the client bundle.
+ */
+export function workerEnv() {
+  return env;
+}
+
+/**
  * Server-function counterpart of the Worker entry's `authenticate()` + store setup:
  * build the D1 store and a better-auth instance from the `cloudflare:workers`
  * bindings, read the session cookie off the incoming request, and return the

@@ -1,17 +1,5 @@
 import { type Auth } from "./modules/auth/auth.js";
 import { HttpError, type JsonValue } from "./core/http-error.js";
-import {
-  createProblemContextHandlerEnv,
-  handleExtractQuestionRequest,
-  handlePreviewUrlRequest,
-  handleUploadUrlRequest,
-  type ProblemContextHandlerEnv
-} from "./modules/problems/problem-context-handler.js";
-import {
-  problemContextExtractQuestionPath,
-  problemContextPreviewUrlPath,
-  problemContextUploadUrlPath
-} from "./modules/problems/problem-context-types.js";
 import type { SessionStore } from "./modules/sessions/session-store.js";
 import { readJsonBody } from "./modules/sessions/session-handler.js";
 import type { ProcessTurnPayload, SessionRuntimeDO } from "./modules/sessions/session-runtime-do.js";
@@ -22,9 +10,9 @@ import { type VoiceSessionServiceEnv } from "./modules/voice/voice-session-servi
 import { maxVoiceTurnBodyBytes, voiceSessionPath, voiceTurnPath, type VoicePipelineTurnResponse } from "./modules/voice/voice-types.js";
 import { buildOwnerKey, type AuthIdentity, type RequestContext } from "./core/request-context.js";
 
-export type ApiHandlerEnv = VoiceSessionServiceEnv & ProblemContextHandlerEnv;
+export type ApiHandlerEnv = VoiceSessionServiceEnv;
 
-export type ApiHandlerEnvSource = VoiceSessionServiceEnv & ProblemContextHandlerEnv;
+export type ApiHandlerEnvSource = VoiceSessionServiceEnv;
 
 export type ApiHandlerOptions = {
   auth: Auth;
@@ -34,7 +22,6 @@ export type ApiHandlerOptions = {
 
 export function createApiHandlerEnv(source: ApiHandlerEnvSource): ApiHandlerEnv {
   return {
-    ...createProblemContextHandlerEnv(source),
     OPENAI_API_KEY: source.OPENAI_API_KEY,
     OPENAI_GATE_CHECKER_MODEL: source.OPENAI_GATE_CHECKER_MODEL,
     OPENAI_REALTIME_MODEL: source.OPENAI_REALTIME_MODEL,
@@ -61,13 +48,7 @@ function json(payload: JsonValue, status: number, headers: Record<string, string
 }
 
 function isApiPath(pathname: string): boolean {
-  return (
-    pathname === voiceSessionPath ||
-    pathname === voiceTurnPath ||
-    pathname === problemContextUploadUrlPath ||
-    pathname === problemContextExtractQuestionPath ||
-    pathname === problemContextPreviewUrlPath
-  );
+  return pathname === voiceSessionPath || pathname === voiceTurnPath;
 }
 
 function unauthorized(): HttpError {
@@ -141,53 +122,8 @@ export async function handleApiRequest(
       return json(response, 200);
     }
 
-    if (url.pathname === problemContextUploadUrlPath) {
-      if (request.method !== "POST") {
-        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      }
-
-      const response = await handleUploadUrlRequest(
-        await readJsonBody(request),
-        env,
-        options.store,
-        context
-      );
-
-      return json(response, 200);
-    }
-
-    if (url.pathname === problemContextExtractQuestionPath) {
-      if (request.method !== "POST") {
-        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      }
-
-      const response = await handleExtractQuestionRequest(
-        await readJsonBody(request),
-        env,
-        options.store,
-        context
-      );
-
-      return json(JSON.parse(JSON.stringify(response)) as JsonValue, 200);
-    }
-
-    if (url.pathname === problemContextPreviewUrlPath) {
-      if (request.method !== "POST") {
-        return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
-      }
-
-      const response = await handlePreviewUrlRequest(
-        await readJsonBody(request),
-        env,
-        options.store,
-        context
-      );
-
-      return json(response, 200);
-    }
-
-    // isApiPath only admits the voice + problem-context endpoints handled above;
-    // sessions now run through TanStack Start server functions, not /api/*.
+    // isApiPath only admits the voice endpoints handled above; sessions and
+    // problem-context now run through TanStack Start server functions, not /api/*.
     return json({ error: "Not found" }, 404);
   } catch (error) {
     return handleApiError(error, url);
@@ -198,10 +134,6 @@ function handleApiError(error: unknown, url: URL): Response {
   if (error instanceof HttpError) {
     if (error.message === "Missing OPENAI_API_KEY") {
       return json({ error: "Server is missing OPENAI_API_KEY." }, 500);
-    }
-
-    if (error.message === "Server is missing R2 credentials.") {
-      return json({ error: error.message }, 500);
     }
 
     if (

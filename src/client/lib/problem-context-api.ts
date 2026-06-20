@@ -4,35 +4,22 @@ import type {
   UploadUrlResponse
 } from "../../modules/problems/problem-context-types.js";
 import {
-  problemContextExtractQuestionPath,
-  problemContextPreviewUrlPath,
-  problemContextUploadUrlPath
-} from "../../modules/problems/problem-context-types.js";
-import { jsonRequestInit } from "./json-request.js";
-import { readJsonResponse } from "./read-json-response.js";
+  extractQuestionFn,
+  requestPreviewUrlFn,
+  requestUploadUrlFn
+} from "../../modules/problems/server/problem-fns.js";
+import { errorMessage } from "./error-message.js";
 
 export async function requestProblemImageUploadUrl(
   sessionId: string,
   contentType: string,
   bytes: number
 ): Promise<UploadUrlResponse> {
-  let response: Response;
-
   try {
-    response = await fetch(
-      problemContextUploadUrlPath,
-      jsonRequestInit("POST", { bytes, contentType, sessionId })
-    );
+    return await requestUploadUrlFn({ data: { bytes, contentType, sessionId } });
   } catch (error) {
-    throw new Error("Could not reach the app server. Try restarting `pnpm dev`.", { cause: error });
+    throw new Error(errorMessage(error, "Failed to create upload URL."));
   }
-
-  return readJsonResponse<UploadUrlResponse>(
-    response,
-    (_status, message) => new Error(message),
-    (status) => `Failed to create upload URL (${status}).`,
-    "Upload URL response was not valid JSON."
-  );
 }
 
 export async function uploadProblemImageToR2(
@@ -67,38 +54,20 @@ export async function extractProblemQuestion(
   sessionId: string,
   objectKey: string
 ): Promise<ExtractQuestionResponse> {
-  let response: Response;
-
   try {
-    response = await fetch(
-      problemContextExtractQuestionPath,
-      jsonRequestInit("POST", { objectKey, sessionId })
-    );
+    return await extractQuestionFn({ data: { objectKey, sessionId } });
   } catch (error) {
-    throw new Error("Could not reach the app server. Try restarting `pnpm dev`.", { cause: error });
+    throw new Error(errorMessage(error, "Failed to extract question."));
   }
-
-  return readJsonResponse<ExtractQuestionResponse>(
-    response,
-    (_status, message) => new Error(message),
-    (status) => `Failed to extract question (${status}).`,
-    "Extract question response was not valid JSON."
-  );
 }
 
 export async function requestProblemImagePreviewUrl(
   sessionId: string,
   objectKey: string
 ): Promise<PreviewUrlResponse> {
-  const response = await fetch(
-    problemContextPreviewUrlPath,
-    jsonRequestInit("POST", { objectKey, sessionId })
-  );
-
-  return readJsonResponse<PreviewUrlResponse>(
-    response,
-    (_status, message) => new Error(message),
-    (status) => `Failed to create preview URL (${status}).`,
-    "Preview URL response was not valid JSON."
-  );
+  try {
+    return await requestPreviewUrlFn({ data: { objectKey, sessionId } });
+  } catch (error) {
+    throw new Error(errorMessage(error, "Failed to create preview URL."));
+  }
 }

@@ -1,7 +1,3 @@
-export const problemContextUploadUrlPath = "/api/problem-context/upload-url";
-export const problemContextExtractQuestionPath = "/api/problem-context/extract-question";
-export const problemContextPreviewUrlPath = "/api/problem-context/preview-url";
-
 export const maxProblemImageBytes = 5_000_000;
 
 export const extractionOutcomes = [
