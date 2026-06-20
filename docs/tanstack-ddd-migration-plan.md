@@ -200,12 +200,13 @@ SSRs only the shell. Bumped wrangler to 4.102 for the plugin peer range. Verifie
 `GET /` returns the SSR shell + client bundle, `GET /api/*` stays worker-handled (401 JSON),
 171/171 tests, all typechecks, `wrangler deploy --dry-run` with the DO binding intact.
 
-> **MIGRATION STATUS (2026-06-20):** Paused after Phase 2 by decision — the branch
-> `feat/tanstack-ddd-migration` (DDD + Vite/Start foundation) is the review deliverable. Phases
-> 3–5 are deferred to a **follow-up branch** once the foundation is run & approved, because they
-> rewrite the *client* (Query hook ports, `/api/*`→server-fn cutover) and this app has **no
-> client/UI tests** — typecheck/build/backend-tests stay green but cannot prove the interactive
-> voice/tutoring UX. Validate that live before resuming.
+> **MIGRATION STATUS (2026-06-20):** Phase 3 (Query hook ports) was carried on the **same**
+> branch `feat/tanstack-ddd-migration` by decision — the earlier "follow-up branch" plan was
+> superseded; the user opted to keep Phase 3–5 commits here and accept green tsc/tests/build as
+> the gate, validating the live voice/tutoring UX before merge. Phases 4–5 remain ahead. Because
+> this app has **no client/UI tests**, the green checks prove compile + backend only, not the
+> interactive UX — the live Google OAuth + voice loop must be exercised before merging, and
+> `pnpm exec wrangler types` must be run + committed before the next `pnpm build`/`pnpm deploy`.
 
 ### Phase 2 — original spec
 Add `vite.config.ts` (`cloudflare({viteEnvironment:{name:'ssr'}})` + `tanstackStart()` +
@@ -216,10 +217,32 @@ through the entry) so the client keeps functioning unchanged. **Swap esbuild →
 `pnpm dev` (and the Portless wiring) to Vite. Bail-out: routes can be `ssr:false` (SPA-mode
 Start) if SSR fights auth.
 
-### Phase 3 — TanStack Query in the client
-Introduce a `QueryClient` + Start SSR dehydration. Port hand-rolled hooks to Query, starting
-with the 377-line `use-tutor-sessions.ts` (its `initGenerationRef` stale-request guard becomes
-Query's built-in cancellation/dedup). Then live-session, problem-context, auth.
+### Phase 3 — TanStack Query in the client — ✅ DONE (2026-06-20)
+A `QueryClient` is provided through router context and SSR dehydration via
+`@tanstack/react-router-ssr-query`'s `setupRouterSsrQueryIntegration({ router, queryClient })`
+(no `routerWithQueryClient` helper anymore) + `createRootRouteWithContext<{ queryClient }>`. All
+four client hooks ported behavior-preservingly with **identical return shapes**, so `App.tsx`
+was untouched:
+- **`use-live-session`** (commit `1097919`, alongside the Query wiring) — the read model now
+  uses `useQuery(["session", id, eventCount])`; query keying replaces the manual `cancelled`
+  stale-response flag, and `refetchInterval` drives the 15s step-loop idle poll. The
+  turn-response patch still overlays the server projection.
+- **`use-tutor-sessions`** (commit `aa30552`) — the session **list** became the one cacheable
+  read (`useQuery(["sessions", userId])`); create/update are mutations (update writes the list
+  cache via `setQueryData`). The create-if-empty / hydrate-stored-or-first **orchestration**
+  stays imperative behind a two-effect reset+init structure with the `initGeneration` guard —
+  Query owns the list fetch, not the bootstrap sequence.
+- **`use-problem-context-step1`** (commit `0df0f9e`) — the five R2/extraction/persist steps run
+  through `useMutation` (no cache effects); the imperative inter-step `workflowIdRef` cancellation
+  is preserved (it's a cancellation concern Query doesn't model).
+- **`use-auth`** (commit `7d5d739`) — `authClient.useSession()` stays the reactive source;
+  the anonymous bootstrap, Google sign-in, and sign-out go through mutations. The bootstrap
+  keeps its state machine and `result.error` check (better-auth resolves with an error value
+  rather than throwing).
+
+Verified green: three tsc projects + 171/171 tests + `vite build`. **Live UI validation
+(Google OAuth round-trip, voice/tutoring loop) still pending before merge** — this app has no
+client/UI tests, so the green checks prove compile + backend, not the interactive UX.
 
 ### Phase 4 — Server functions replace `/api/*`
 Convert endpoints to `createServerFn`, **module by module** (sessions → problems → voice),
