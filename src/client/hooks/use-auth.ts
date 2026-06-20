@@ -29,10 +29,13 @@ export function useAuth() {
   const { mutateAsync: signInAnonymously } = useMutation({
     mutationFn: () => authClient.signIn.anonymous()
   });
-  const { mutate: signInGoogle } = useMutation({
+  // mutateAsync (not mutate) so the returned functions keep the better-auth
+  // promise the previous direct calls exposed — same return contract, same
+  // rejection propagation.
+  const { mutateAsync: signInGoogle } = useMutation({
     mutationFn: () => authClient.signIn.social({ provider: "google" })
   });
-  const { mutate: signOutMutate } = useMutation({
+  const { mutateAsync: signOutMutate } = useMutation({
     mutationFn: () => authClient.signOut()
   });
 

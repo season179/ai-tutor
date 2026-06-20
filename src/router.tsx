@@ -6,13 +6,16 @@ import { routeTree } from "./routeTree.gen";
 
 export function getRouter() {
   // Conservative defaults that preserve the previous hand-rolled fetch behaviour:
-  // no automatic retries (the API surfaces 401/403 that must not be retried) and
-  // no refetch-on-focus. Per-query overrides (e.g. live-session polling) live in
-  // the hooks.
+  // no automatic retries (the API surfaces 401/403 that must not be retried), and
+  // no refetch on focus or reconnect — the old hooks only fetched on explicit
+  // refresh/init, so an automatic reconnect refetch would flip the sessions
+  // list's isFetching and flash the sidebar into its loading state mid-session.
+  // Per-query overrides (e.g. live-session polling) live in the hooks.
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
+        refetchOnReconnect: false,
         refetchOnWindowFocus: false,
       },
     },

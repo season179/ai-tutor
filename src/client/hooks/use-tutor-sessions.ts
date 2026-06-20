@@ -34,6 +34,10 @@ type UseTutorSessionsOptions = {
   userId: string | undefined;
 };
 
+// Stable identity for the empty case so a render before data resolves doesn't
+// hand App.tsx a fresh array each time (its visibleSessions useMemo keys on it).
+const EMPTY_SESSIONS: TutorSessionSummary[] = [];
+
 function sessionsQueryKey(userId: string | undefined): readonly [string, string | undefined] {
   return ["sessions", userId];
 }
@@ -148,7 +152,7 @@ export function useTutorSessions({
     queryFn: listSessions,
     enabled: Boolean(userId)
   });
-  const sessions = sessionsQuery.data ?? [];
+  const sessions = sessionsQuery.data ?? EMPTY_SESSIONS;
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
   const [isHydrating, setIsHydrating] = useState(false);
@@ -163,10 +167,9 @@ export function useTutorSessions({
   const listError =
     switchError ?? (sessionsQuery.isError ? toSessionListError(sessionsQuery.error) : null);
 
-  const createMutation = useMutation({ mutationFn: () => createSession() });
-  const { mutateAsync: createSessionAsync } = createMutation;
+  const { mutateAsync: createSessionAsync } = useMutation({ mutationFn: () => createSession() });
 
-  const updateMutation = useMutation({
+  const { mutateAsync: updateSessionAsync } = useMutation({
     mutationFn: ({ sessionId, request }: { sessionId: string; request: Parameters<typeof updateSession>[1] }) =>
       updateSession(sessionId, request),
     onSuccess: (updated) => {
@@ -177,7 +180,6 @@ export function useTutorSessions({
       );
     }
   });
-  const { mutateAsync: updateSessionAsync } = updateMutation;
 
   const persistActiveSessionId = useCallback(
     (sessionId: string | undefined) => {
