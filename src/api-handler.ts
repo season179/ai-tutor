@@ -13,8 +13,7 @@ import {
   problemContextUploadUrlPath
 } from "./modules/problems/problem-context-types.js";
 import type { SessionStore } from "./modules/sessions/session-store.js";
-import { handleSessionsRequest, readJsonBody } from "./modules/sessions/session-handler.js";
-import { sessionsPath } from "./modules/sessions/session-types.js";
+import { readJsonBody } from "./modules/sessions/session-handler.js";
 import type { ProcessTurnPayload, SessionRuntimeDO } from "./modules/sessions/session-runtime-do.js";
 import { createVoiceSessionWithStore } from "./modules/voice/voice-session-handler.js";
 import { handleVoicePipelineTurnWithStore } from "./modules/voice/voice-pipeline-service.js";
@@ -67,9 +66,7 @@ function isApiPath(pathname: string): boolean {
     pathname === voiceTurnPath ||
     pathname === problemContextUploadUrlPath ||
     pathname === problemContextExtractQuestionPath ||
-    pathname === problemContextPreviewUrlPath ||
-    pathname === sessionsPath ||
-    pathname.startsWith(`${sessionsPath}/`)
+    pathname === problemContextPreviewUrlPath
   );
 }
 
@@ -189,8 +186,9 @@ export async function handleApiRequest(
       return json(response, 200);
     }
 
-    const payload = await handleSessionsRequest(request, context, options.store);
-    return json(payload as JsonValue, 200);
+    // isApiPath only admits the voice + problem-context endpoints handled above;
+    // sessions now run through TanStack Start server functions, not /api/*.
+    return json({ error: "Not found" }, 404);
   } catch (error) {
     return handleApiError(error, url);
   }

@@ -1,6 +1,6 @@
 import startServer from "@tanstack/react-start/server-entry";
 
-import { createAuth, authPathPrefix, type AuthEnv } from "./modules/auth/auth.js";
+import { createWorkerAuth, authPathPrefix } from "./modules/auth/auth.js";
 import { createApiHandlerEnv, handleApiRequest } from "./api-handler.js";
 import { D1SessionStore } from "./modules/sessions/d1-session-store.js";
 import { SessionRuntimeDO } from "./modules/sessions/session-runtime-do.js";
@@ -59,14 +59,6 @@ export default {
     );
   }
 } satisfies ExportedHandler<Env>;
-
-function createWorkerAuth(env: AuthEnv, store: D1SessionStore) {
-  return createAuth(env, {
-    transferSessions: async (fromUserId, toUserId) => {
-      await store.transferOwnerSessions(fromUserId, toUserId);
-    }
-  });
-}
 
 async function limitVoiceSessionRequest(env: Env, key: string): Promise<Response | undefined> {
   const limiter = env.REALTIME_TOKEN_RATE_LIMITER;

@@ -76,4 +76,22 @@ export function createAuth(env: AuthEnv, options: CreateAuthOptions = {}) {
   });
 }
 
+/**
+ * Build a better-auth instance wired to a session store so anonymous→linked-account
+ * merges hand the anonymous user's owned sessions to the new account. Shared by the
+ * Worker entry and the server-function request-context helper so both construct the
+ * instance identically. The store is typed structurally to keep this module free of
+ * any concrete sessions/store import.
+ */
+export function createWorkerAuth(
+  env: AuthEnv,
+  store: { transferOwnerSessions: (fromUserId: string, toUserId: string) => Promise<unknown> }
+) {
+  return createAuth(env, {
+    transferSessions: async (fromUserId, toUserId) => {
+      await store.transferOwnerSessions(fromUserId, toUserId);
+    }
+  });
+}
+
 export type Auth = ReturnType<typeof createAuth>;

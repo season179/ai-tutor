@@ -15,6 +15,7 @@ import { parseActiveStep, serializeActiveStep, type ActiveStep } from "../tutori
 import type { ExtractionOutcome } from "../problems/problem-context-types.js";
 import { problemTypes, type ProblemContextRecord, type ProblemFrame, type ProblemQuantity, type ProblemType } from "../problems/problem-frame.js";
 import { isJsonObject } from "../../core/schema-parser.js";
+import type { JsonValue } from "../../core/http-error.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
 import { sessionStoreNotFoundError, type AppendComprehensionCheckRequest, type CommitTurnRequest, type SaveProblemContextRequest, type SaveReflectionRequest, type SessionPhaseAdvance, type SessionStore } from "./session-store.js";
 import { initialPhase } from "../tutoring/phase-policy.js";
@@ -265,7 +266,9 @@ function createSessionEventRecord(
     id,
     message: request.message,
     sessionId,
-    value: request.value ?? null
+    // The append request's `value` is untyped at the boundary; it is JSON the
+    // caller hands us, so it is stored as the JSON-serializable record value.
+    value: (request.value ?? null) as JsonValue
   };
 }
 
@@ -531,7 +534,7 @@ export function mapD1EventRow(row: Record<string, unknown>): SessionEventRecord 
     id: Number(row.id),
     message: String(row.message),
     sessionId: String(row.session_id),
-    value: parseJsonOrNull(rowStringOrNull(row.value_json))
+    value: parseJsonOrNull(rowStringOrNull(row.value_json)) as JsonValue
   };
 }
 

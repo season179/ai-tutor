@@ -15,6 +15,7 @@ import type {
   UpdateTutorSessionRequest
 } from "./session-types.js";
 import { parseObjectWithSchema } from "../../core/schema-parser.js";
+import type { JsonValue } from "../../core/http-error.js";
 
 const tutorSessionStatusSchema = z.enum(["draft", "active", "ended"]) satisfies z.ZodType<TutorSessionStatus>;
 
@@ -89,7 +90,9 @@ const sessionEventRecordSchema = z.object({
   id: z.number().int().positive(),
   message: z.string().min(1),
   sessionId: z.string().min(1),
-  value: z.unknown()
+  // Accept any persisted JSON value (no runtime narrowing, matching the old
+  // `z.unknown()`) while typing it as the JSON-serializable `JsonValue`.
+  value: z.custom<JsonValue>()
 }) satisfies z.ZodType<SessionEventRecord>;
 
 const problemContextRecordSchema = z.object({

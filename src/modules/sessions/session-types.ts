@@ -1,10 +1,9 @@
-export const sessionsPath = "/api/sessions";
-
 export const maxSessionEvents = 200;
 
 export type TutorSessionStatus = "draft" | "active" | "ended";
 
 import type { ActiveStep } from "../tutoring/active-step.js";
+import type { JsonValue } from "../../core/http-error.js";
 import type { ExtractionOutcome } from "../problems/problem-context-types.js";
 import type { ProblemContextRecord } from "../problems/problem-frame.js";
 import type { ComprehensionGateStatus, SessionPhase, SupportLevel } from "../tutoring/tutor-action.js";
@@ -43,7 +42,10 @@ export type SessionEventRecord = {
   id: number;
   message: string;
   sessionId: string;
-  value: unknown;
+  // Persisted as JSON text and sent over the wire as JSON, so it is constrained to
+  // JSON-serializable values — which also lets it cross a TanStack server function
+  // (Seroval rejects bare `unknown` as "may not be serializable").
+  value: JsonValue;
 };
 
 /**

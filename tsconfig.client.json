@@ -15,6 +15,15 @@
     "src/router.tsx",
     "src/routes/**/*.ts",
     "src/routes/**/*.tsx",
-    "src/routeTree.gen.ts"
+    "src/routeTree.gen.ts",
+    // Server functions are imported by the client to be *called*, so tsc follows
+    // their handler bodies into `cloudflare:workers` and the workerd runtime
+    // globals (D1Database, R2Bucket, …). The Start plugin strips those handlers
+    // from the client bundle, but the type-checker still needs the declarations.
+    // Trade-off: this also merges workerd's DOM-overlapping globals (e.g. the
+    // HTMLRewriter `Element`) into the DOM lib, so prefer unambiguous DOM APIs
+    // like `appendChild` over `append` in client code. Phase 5 can unify the
+    // tsconfigs to isolate this more cleanly.
+    "worker-configuration.d.ts"
   ]
 }

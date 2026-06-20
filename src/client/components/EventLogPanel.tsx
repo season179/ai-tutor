@@ -91,7 +91,7 @@ async function copyTextToClipboard(text: string): Promise<void> {
   textArea.style.opacity = "0";
   textArea.style.pointerEvents = "none";
 
-  document.body.append(textArea);
+  document.body.appendChild(textArea);
   textArea.select();
 
   try {
