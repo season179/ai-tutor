@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import {
   toTutorSessionSummary,
   type TutorSessionRecord,
@@ -31,6 +33,10 @@ type UseTutorSessionsOptions = {
   stopVoiceSession: () => void;
   userId: string | undefined;
 };
+
+function sessionsQueryKey(userId: string | undefined): readonly [string, string | undefined] {
+  return ["sessions", userId];
+}
 
 function toSessionListError(error: unknown): SessionListError {
   if (error instanceof SessionApiError) {
@@ -133,15 +139,45 @@ export function useTutorSessions({
   updateActiveSession: (request: Parameters<typeof updateSession>[1]) => Promise<void>;
   notifyEventLogged: () => void;
 } {
-  const [sessions, setSessions] = useState<TutorSessionSummary[]>([]);
+  const queryClient = useQueryClient();
+
+  // The session list is the one cacheable server read; the create/hydrate
+  // orchestration around it (below) stays imperative.
+  const sessionsQuery = useQuery({
+    queryKey: sessionsQueryKey(userId),
+    queryFn: listSessions,
+    enabled: Boolean(userId)
+  });
+  const sessions = sessionsQuery.data ?? [];
+
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
-  const [isLoading, setIsLoading] = useState(false);
   const [isHydrating, setIsHydrating] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
-  const [listError, setListError] = useState<SessionListError | null>(null);
+  // Switch/create failures; list failures come from the query itself.
+  const [switchError, setSwitchError] = useState<SessionListError | null>(null);
   const [eventCount, setEventCount] = useState(0);
   const initializedForUserIdRef = useRef<string | undefined>(undefined);
   const initGenerationRef = useRef(0);
+
+  const isLoading = sessionsQuery.isFetching;
+  const listError =
+    switchError ?? (sessionsQuery.isError ? toSessionListError(sessionsQuery.error) : null);
+
+  const createMutation = useMutation({ mutationFn: () => createSession() });
+  const { mutateAsync: createSessionAsync } = createMutation;
+
+  const updateMutation = useMutation({
+    mutationFn: ({ sessionId, request }: { sessionId: string; request: Parameters<typeof updateSession>[1] }) =>
+      updateSession(sessionId, request),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<TutorSessionSummary[]>(sessionsQueryKey(userId), (previous) =>
+        (previous ?? []).map((session) =>
+          session.id === updated.id ? toTutorSessionSummary(updated) : session
+        )
+      );
+    }
+  });
+  const { mutateAsync: updateSessionAsync } = updateMutation;
 
   const persistActiveSessionId = useCallback(
     (sessionId: string | undefined) => {
@@ -170,25 +206,23 @@ export function useTutorSessions({
   );
 
   const refreshSessions = useCallback(async () => {
-    setIsLoading(true);
-    setListError(null);
-
-    try {
-      const nextSessions = await listSessions();
-      setSessions(nextSessions);
-      return nextSessions;
-    } catch (error) {
-      setListError(toSessionListError(error));
-      throw error;
-    } finally {
-      setIsLoading(false);
+    if (!userId) {
+      return [];
     }
-  }, []);
+
+    setSwitchError(null);
+    // staleTime defaults to 0, so this always hits the network like the old
+    // hand-rolled refresh, and updates the cache the list query observes.
+    return queryClient.fetchQuery({
+      queryKey: sessionsQueryKey(userId),
+      queryFn: listSessions
+    });
+  }, [queryClient, userId]);
 
   const runSessionSwitch = useCallback(
     async <T>(task: () => Promise<T>): Promise<T> => {
       setIsSwitching(true);
-      setListError(null);
+      setSwitchError(null);
 
       try {
         if (getIsVoiceRunning()) {
@@ -198,7 +232,7 @@ export function useTutorSessions({
         return await task();
       } catch (error) {
         const mapped = toSessionListError(error);
-        setListError(mapped);
+        setSwitchError(mapped);
         setStatus(mapped.message, "error");
         throw error;
       } finally {
@@ -231,11 +265,14 @@ export function useTutorSessions({
 
   const createNewSession = useCallback(() => {
     return runSessionSwitch(async () => {
-      const created = await createSession();
+      const created = await createSessionAsync();
       const nextSessions = await refreshSessions();
 
       if (!nextSessions.some((session) => session.id === created.id)) {
-        setSessions([created, ...nextSessions]);
+        queryClient.setQueryData<TutorSessionSummary[]>(sessionsQueryKey(userId), [
+          created,
+          ...nextSessions
+        ]);
       }
 
       clearEventLog();
@@ -249,13 +286,16 @@ export function useTutorSessions({
     });
   }, [
     clearEventLog,
+    createSessionAsync,
     loadSessionContext,
     logEvent,
     persistActiveSessionId,
+    queryClient,
     refreshSessions,
     resetProblemImage,
     runSessionSwitch,
-    setStatus
+    setStatus,
+    userId
   ]);
 
   const updateActiveSession = useCallback(
@@ -264,50 +304,51 @@ export function useTutorSessions({
         return;
       }
 
-      const updated = await updateSession(activeSessionId, request);
-      setSessions((previous) =>
-        previous.map((session) =>
-          session.id === updated.id ? toTutorSessionSummary(updated) : session
-        )
-      );
+      await updateSessionAsync({ sessionId: activeSessionId, request });
     },
-    [activeSessionId]
+    [activeSessionId, updateSessionAsync]
   );
 
+  // Per-user reset: the moment the user changes (sign-in/out/switch), drop the
+  // previous selection immediately, cancel any in-flight hydration, and mark the
+  // session as hydrating until the init effect below finishes — so `sessionReady`
+  // stays false across the whole init, exactly as before. The list itself is the
+  // query, keyed by userId, so it swaps and refetches on its own.
   useEffect(() => {
-    if (!userId) {
-      initializedForUserIdRef.current = undefined;
-      setSessions([]);
-      setActiveSessionId(undefined);
-      setIsLoading(false);
-      setIsHydrating(false);
-      setListError(null);
-      setEventCount(0);
+    initGenerationRef.current += 1;
+    initializedForUserIdRef.current = undefined;
+    setActiveSessionId(readStoredActiveSessionId(userId));
+    setSwitchError(null);
+    setEventCount(0);
+    setIsSwitching(false);
+    setIsHydrating(Boolean(userId));
+  }, [userId]);
+
+  // Init (once per user, after the list resolves): create-if-empty, else hydrate
+  // the stored-or-first session. The generation guard covers only this async
+  // sequence; the query handles its own stale-fetch cancellation.
+  useEffect(() => {
+    if (!userId || initializedForUserIdRef.current === userId) {
       return;
     }
 
-    if (initializedForUserIdRef.current === userId) {
+    if (sessionsQuery.isPending || sessionsQuery.isFetching) {
+      return; // isHydrating stays true (set by the reset effect)
+    }
+
+    if (sessionsQuery.isError) {
+      // Surfaced via listError; a retry refetches and re-runs this effect.
+      setIsHydrating(false);
       return;
     }
 
     initializedForUserIdRef.current = userId;
     const storedId = readStoredActiveSessionId(userId);
     const initGeneration = ++initGenerationRef.current;
-    setActiveSessionId(storedId);
-    setSessions([]);
-    setListError(null);
-    setEventCount(0);
+    const nextSessions = sessionsQuery.data ?? [];
 
     void (async () => {
-      setIsHydrating(true);
-      setIsLoading(true);
-
       try {
-        const nextSessions = await refreshSessions();
-        if (initGeneration !== initGenerationRef.current) {
-          return;
-        }
-
         if (nextSessions.length === 0) {
           const created = await createSession();
           if (initGeneration !== initGenerationRef.current) {
@@ -318,7 +359,7 @@ export function useTutorSessions({
           resetProblemImage();
           loadSessionContext(toLoadedSessionContext(created));
           setEventCount(0);
-          setSessions([created]);
+          queryClient.setQueryData<TutorSessionSummary[]>(sessionsQueryKey(userId), [created]);
           persistActiveSessionId(created.id);
           setStatus("New session ready.", "ready");
           logEvent("Session created", { sessionId: created.id, title: created.title }, created.id);
@@ -341,7 +382,6 @@ export function useTutorSessions({
       } finally {
         if (initGeneration === initGenerationRef.current) {
           setIsHydrating(false);
-          setIsLoading(false);
         }
       }
     })();
@@ -351,8 +391,12 @@ export function useTutorSessions({
     loadSessionContext,
     logEvent,
     persistActiveSessionId,
-    refreshSessions,
+    queryClient,
     resetProblemImage,
+    sessionsQuery.data,
+    sessionsQuery.isError,
+    sessionsQuery.isFetching,
+    sessionsQuery.isPending,
     setStatus,
     userId
   ]);
