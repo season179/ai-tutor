@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   extractionStatusHint,
@@ -12,7 +11,7 @@ import {
 import {
   buildProblemFrame,
   normalizeExtractionResponse
-} from "../dist/modules/problems/question-extraction-service.js";
+} from "../src/modules/problems/question-extraction-service.ts";
 
 test("mapOutcomeToExtractionStatus maps review and empty outcomes", () => {
   assert.equal(mapOutcomeToExtractionStatus("extracted"), "ready");

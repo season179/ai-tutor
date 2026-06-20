@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { deriveFirstCheckableStep } from "../dist/modules/tutoring/active-step.js";
-import { gradeStudentTurn, shouldGradeTurn } from "../dist/modules/tutoring/verifier.js";
+import { deriveFirstCheckableStep } from "../src/modules/tutoring/active-step.ts";
+import { gradeStudentTurn, shouldGradeTurn } from "../src/modules/tutoring/verifier.ts";
 import type { ProblemFrame } from "../src/modules/problems/problem-frame.ts";
 
 const env = {

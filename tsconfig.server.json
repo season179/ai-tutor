@@ -5,18 +5,23 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2023"],
     "types": ["node", "@cloudflare/workers-types"],
-    "rootDir": "src",
-    "outDir": "dist",
+    "noEmit": true,
     "sourceMap": true
   },
   "include": [
-    "src/server.ts",
-    "src/modules/tutoring/tutor-action.ts",
-    "src/modules/tutoring/phase-policy.ts",
-    "src/modules/tutoring/tutor-action-validator.ts",
-    "src/modules/sessions/hint-alarm.ts",
-    "src/modules/sessions/session-handler.ts",
-    "src/modules/voice/voice-session-handler.ts",
-    "src/client/lib/phase-rail.ts"
+    // All server-side module code, the shared kernel, and the external-API adapter.
+    "src/core/**/*.ts",
+    "src/providers/**/*.ts",
+    "src/modules/**/*.ts",
+    "src/server-request-context.ts",
+    "src/worker.ts",
+    // The generated binding types define the ambient `Env` the Worker entry uses;
+    // `core/env.ts` is the hand-written canonical shape, but the worker still sees
+    // workerd's runtime globals (ExportedHandler, DurableObjectNamespace, …) here.
+    "worker-configuration.d.ts"
+  ],
+  "exclude": [
+    // Client UI has its own DOM/Vite config and must not be re-checked here.
+    "src/client"
   ]
 }

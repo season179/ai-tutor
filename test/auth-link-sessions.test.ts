@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { transferSessionsOnLink } from "../dist/modules/auth/auth.js";
+import { transferSessionsOnLink } from "../src/modules/auth/auth.ts";
 
 test("transferSessionsOnLink forwards anonymous and Google user ids", async () => {
   const calls: Array<[string, string]> = [];

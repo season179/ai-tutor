@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   frameContainsComputedSolution,
   scrubComputedSolutionFromFrame,
   scrubComputedSolutionFromText
-} from "../dist/modules/problems/problem-frame.js";
-import { buildProblemFrame } from "../dist/modules/problems/question-extraction-service.js";
+} from "../src/modules/problems/problem-frame.ts";
+import { buildProblemFrame } from "../src/modules/problems/question-extraction-service.ts";
 
 test("frameContainsComputedSolution flags numeric-only unknown targets", () => {
   const frame = buildProblemFrame({

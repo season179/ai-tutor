@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { railStations } from "../dist/client/lib/phase-rail.js";
+import { railStations } from "../src/client/lib/phase-rail.ts";
 
 function states(currentPhase: Parameters<typeof railStations>[0], gateStatus?: Parameters<typeof railStations>[1]) {
   return railStations(currentPhase, gateStatus).map((station) => station.state);

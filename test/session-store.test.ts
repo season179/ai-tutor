@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { mapD1SessionRow, MemorySessionStore } from "../dist/modules/sessions/memory-session-store.js";
-import { updateSession } from "../dist/modules/sessions/session-handler.js";
+import { mapD1SessionRow, MemorySessionStore } from "../src/modules/sessions/memory-session-store.ts";
+import { updateSession } from "../src/modules/sessions/session-handler.ts";
 import type { RequestContext } from "../src/core/request-context.ts";
 
 const ownerKey = "access:user-a";

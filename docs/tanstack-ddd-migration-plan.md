@@ -250,11 +250,35 @@ deleting the matching hand-rolled `fetch` client and `api-handler` branch as eac
 turn becomes a server fn that calls the DO via RPC. better-auth remains the `/api/auth/$`
 catch-all route. After the last domain, delete `api-handler.ts`.
 
-### Phase 5 — Test + build cleanup
+### Phase 5 — Test + build cleanup — ✅ IN PROGRESS (2026-06-20)
 Move tests to **Vitest** (Vite-native, runs TS directly) — this dissolves the `dist/`-vs-`src/`
 inconsistency, the `server.ts` barrel, and `tsconfig.server.json`'s emit role in one move.
 Consolidate tsconfigs around Vite/Start. Remove esbuild, `public/client.js` artifacts, dead CORS
 file (`r2-cors.json` vs `config/r2-problem-images-cors.json` — keep one, re-apply to bucket).
+
+**Done so far:**
+- **Vitest migration.** `vitest.config.ts` (standalone Node pool — the suite is pure unit tests,
+  in-memory store + mocked `fetch`; nothing tested imports `cloudflare:workers`, so no
+  `@cloudflare/vite-plugin`/workers pool needed, sidestepping the Vitest 4 incompat
+  workers-sdk#10170). All 26 test files rewritten: `../dist/*.js` → `../src/*.ts`, the
+  `node:test` import dropped (Vitest `globals: true` exposes `test`), `node:assert` retained.
+  `pnpm test` is now `vitest run` (~0.7s vs the old tsc-emit + node --test loop). The
+  `src/server.ts` test-only barrel is **deleted**; nothing imported it.
+- **tsconfig consolidation.** `tsconfig.server.json` is now a comprehensive **no-emit** server
+  typecheck (`src/core`, `src/providers`, `src/modules/**`, server-request-context, worker) — it
+  no longer exists just to emit `dist/`, so 35 server files that were only checked transitively
+  are now first-class. The client-config **workerd `Element`/`append` hazard is sealed**: TS
+  interface-merge can't remove overloads (confirmed empirically; CF issues #25/#164 call loading
+  DOM + workerd types in one compilation a known conflict), so the client config loads a
+  **stripped** `worker-configuration.client.d.ts` — `scripts/strip-worker-types.mjs` derives it
+  from the generated file with the 10 HTMLRewriter DOM-colliding globals (`Element`, `Comment`,
+  `Text`, `Document`, `Doctype`, `HTMLRewriter`, `ContentOptions`, …) removed. `el.append(stream)`
+  now correctly errors. Wired into `check:worker-types` + a new `pnpm types` script; the stripped
+  file is committed alongside the source.
+- **Still TODO this phase:** remove esbuild + the dead `r2-cors.json`; fold in the `b4bbfb9`
+  review findings (16 KB session body cap via shared middleware; `HttpError`→HTTP-status — but
+  note TanStack #5107/#5407: `setResponseStatus` is a no-op on `throw` and in global middleware,
+  so the wire-level 500 is framework-blocked; client already recovers the real code via seroval).
 
 ### Phase 6 — Optional further TanStack (only where it earns its place)
 TanStack **Form** for the problem composer; **Store**/**Pacer** for voice-turn debounce/local

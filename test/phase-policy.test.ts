@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   allowedMoves,
@@ -12,7 +11,7 @@ import {
   isGateReadStatus,
   isMoveLegal,
   nextGateStatus
-} from "../dist/modules/tutoring/phase-policy.js";
+} from "../src/modules/tutoring/phase-policy.ts";
 
 test("the comprehension gate allows only the Three Reads and restate moves", () => {
   const moves = allowedMoves("frame_task");

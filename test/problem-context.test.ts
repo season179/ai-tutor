@@ -1,19 +1,18 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { MemorySessionStore } from "../dist/modules/sessions/memory-session-store.js";
+import { MemorySessionStore } from "../src/modules/sessions/memory-session-store.ts";
 import {
   handleExtractQuestionRequest,
   handleUploadUrlRequest
-} from "../dist/modules/problems/problem-context-handler.js";
+} from "../src/modules/problems/problem-context-handler.ts";
 import {
   createProblemImageObjectKey,
   isOwnedProblemImageKey
-} from "../dist/modules/problems/problem-image-store.js";
+} from "../src/modules/problems/problem-image-store.ts";
 import {
   extractQuestionFromImageUrl,
   normalizeExtractionResponse
-} from "../dist/modules/problems/question-extraction-service.js";
+} from "../src/modules/problems/question-extraction-service.ts";
 import type { RequestContext } from "../src/core/request-context.ts";
 
 const ownerKey = "user-a";

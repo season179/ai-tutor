@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   appendSessionEventRequestSchema,
@@ -7,7 +6,7 @@ import {
   parseCreateTutorSessionRequest,
   parseUpdateTutorSessionRequest,
   updateTutorSessionRequestSchema
-} from "../dist/modules/sessions/session-schema.js";
+} from "../src/modules/sessions/session-schema.ts";
 
 test("createTutorSessionRequestSchema accepts an empty object", () => {
   assert.deepEqual(createTutorSessionRequestSchema.parse({}), {});

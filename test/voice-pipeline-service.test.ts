@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { MemorySessionStore } from "../dist/modules/sessions/memory-session-store.js";
-import { handleVoicePipelineTurnWithStore } from "../dist/modules/voice/voice-pipeline-service.js";
+import { MemorySessionStore } from "../src/modules/sessions/memory-session-store.ts";
+import { handleVoicePipelineTurnWithStore } from "../src/modules/voice/voice-pipeline-service.ts";
 import type { RequestContext } from "../src/core/request-context.ts";
 
 const ownerKey = "access:test-user";

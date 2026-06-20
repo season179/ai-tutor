@@ -20,10 +20,12 @@
     // their handler bodies into `cloudflare:workers` and the workerd runtime
     // globals (D1Database, R2Bucket, …). The Start plugin strips those handlers
     // from the client bundle, but the type-checker still needs the declarations.
-    // Trade-off: this also merges workerd's DOM-overlapping globals (e.g. the
-    // HTMLRewriter `Element`) into the DOM lib, so prefer unambiguous DOM APIs
-    // like `appendChild` over `append` in client code. Phase 5 can unify the
-    // tsconfigs to isolate this more cleanly.
-    "worker-configuration.d.ts"
+    //
+    // We load `worker-configuration.client.d.ts` — the generated bindings with the
+    // workerd HTMLRewriter globals (the DOM-colliding `Element`/`Comment`/`Text`/…)
+    // stripped by scripts/strip-worker-types.mjs — instead of the raw generated
+    // file. That keeps the DOM `Element.append()` from being silently widened to
+    // accept workerd-only `ReadableStream`/`Response` args.
+    "worker-configuration.client.d.ts"
   ]
 }

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   parseVoicePipelineTurnRequest,
@@ -7,7 +6,7 @@ import {
   parseVoiceSessionDescriptor,
   serializeVoicePipelineTurnResponse,
   serializeVoiceSessionDescriptor
-} from "../dist/modules/voice/voice-session-schema.js";
+} from "../src/modules/voice/voice-session-schema.ts";
 import type {
   OpenAIVoicePipelineSessionDescriptor,
   OpenAIRealtimeSessionDescriptor,

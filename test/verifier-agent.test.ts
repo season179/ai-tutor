@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { runVerifierAgent } from "../dist/modules/tutoring/verifier-agent.js";
+import { runVerifierAgent } from "../src/modules/tutoring/verifier-agent.ts";
 import type { ProblemFrame } from "../src/modules/problems/problem-frame.ts";
 
 const env = {

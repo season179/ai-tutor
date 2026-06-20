@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
-import { HttpError } from "../dist/core/http-error.js";
-import { parseCreateVoiceSessionRequest } from "../dist/modules/voice/voice-session-handler.js";
+import { HttpError } from "../src/core/http-error.ts";
+import { parseCreateVoiceSessionRequest } from "../src/modules/voice/voice-session-handler.ts";
 
 test("parseCreateVoiceSessionRequest accepts tutor intent with sessionId", () => {
   assert.deepEqual(parseCreateVoiceSessionRequest({ intent: "tutor", sessionId: "session-123" }), {

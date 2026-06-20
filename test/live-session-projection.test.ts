@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   goalStatusFromDetail,
   outputLanguageLabelFromContext,
   pendingHintFromEvents
-} from "../dist/modules/sessions/live-session-projection.js";
+} from "../src/modules/sessions/live-session-projection.ts";
 import { hintTimerEventMessage } from "../src/modules/sessions/hint-timer.ts";
 import { studentTurnEventMessage } from "../src/modules/sessions/session-types.ts";
 

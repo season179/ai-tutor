@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import {
   toPublicActiveStep,
   toPublicSessionDetail
-} from "../dist/modules/sessions/session-types.js";
+} from "../src/modules/sessions/session-types.ts";
 
 const fullActiveStep = {
   ask: "How many stickers does each friend get?",

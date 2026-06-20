@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm typecheck:tsc && vite build",
-    "check:worker-types": "wrangler types --check",
+    "check:worker-types": "wrangler types --check && node scripts/strip-worker-types.mjs",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run",
     "dev": "PORTLESS_TLD=dev portless",
@@ -18,9 +18,10 @@
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply ai-tutor-sessions --local",
     "db:migrate:remote": "wrangler d1 migrations apply ai-tutor-sessions --remote",
+    "types": "wrangler types && node scripts/strip-worker-types.mjs",
     "typecheck:tsc": "pnpm check:worker-types && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.worker.json",
     "typecheck": "pnpm typecheck:tsc && pnpm test",
-    "test": "tsc -p tsconfig.server.json && node --experimental-strip-types --test test/**/*.test.ts"
+    "test": "vitest run"
   },
   "portless": {
     "name": "ai-tutor",
@@ -49,6 +50,7 @@
     "portless": "0.14.0",
     "typescript": "^5.9.3",
     "vite": "^8.0.16",
+    "vitest": "^4.1.9",
     "wrangler": "^4.102.0"
   }
 }
