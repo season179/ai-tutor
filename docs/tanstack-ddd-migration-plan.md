@@ -159,7 +159,20 @@ wrangler **4.102**, vite **8.0.16**, TypeScript **6.0.3**, aws4fetch **1.0.20**.
 - React SSR injects `<!-- -->` markers between static text and dynamic values — greps on
   rendered HTML must account for it (cosmetic, testing-only).
 
-### Phase 1 — DDD reorg of the *existing* app (no TanStack yet)
+### Phase 1 — DDD reorg of the *existing* app (no TanStack yet) — ✅ DONE (commit `616f0ff`, 2026-06-20)
+Executed via a deterministic move+import-rewrite script (39 `git mv` renames, relative `.js`
+specifiers recomputed, `tsconfig.server`/`worker` paths + `dist/`-and-`src/` test imports
+remapped). Landed `core/` (incl. `schema-parser`, deviating from the draft below — it's a generic
+zod parser used by every module, so `core/` beats `tutoring/` and avoids 10 cross-module edges),
+`providers/openai/`, and `modules/{auth,tutoring,sessions,voice,problems}` (flat at module root —
+the `server`/`ui`/`runtime` sub-split stays deferred to P3–P4 as planned). `worker.ts`/`server.ts`/
+`api-handler.ts` stayed at `src/` root; the stranded `voice-client-adapter` moved into `client/lib`.
+Incidental fix: added `voice-session-handler` to the server tsconfig include (its test was passing
+only off stale `dist/` output). Verified green: 171/171 tests on a clean build, all three tsc
+projects, client bundle, `wrangler types --check`, and `wrangler deploy --dry-run`. Original spec
+below.
+
+
 Move today's worker-native code into `modules/<context>/`, but **only as far as the boundary is
 stable today**. Concretely: relocate the **leaf/pure modules** (the `tutoring/` engine, all
 `*-types`/`*-schema` domain files, `problems/` domain) and group each module's files at the
