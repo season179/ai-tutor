@@ -1,11 +1,17 @@
+import startServer from "@tanstack/react-start/server-entry";
+
 import { createAuth, authPathPrefix, type AuthEnv } from "./modules/auth/auth.js";
 import { createApiHandlerEnv, handleApiRequest } from "./api-handler.js";
 import { D1SessionStore } from "./modules/sessions/d1-session-store.js";
 import { SessionRuntimeDO } from "./modules/sessions/session-runtime-do.js";
 import { voiceSessionPath, voiceTurnPath } from "./modules/voice/voice-types.js";
 
+// Durable Objects must be exported from the worker's main module.
 export { SessionRuntimeDO };
 
+// Custom Cloudflare entry: auth + voice rate-limit + the ownership-gated API
+// handler all run HERE, before delegating anything else to TanStack Start, which
+// SSRs the document shell and serves the client bundle (replacing env.ASSETS).
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
@@ -35,7 +41,8 @@ export default {
       return apiResponse;
     }
 
-    return env.ASSETS.fetch(request);
+    // Start reads CF bindings via `cloudflare:workers`, so only the Request is passed.
+    return startServer.fetch(request);
   }
 } satisfies ExportedHandler<Env>;
 

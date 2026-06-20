@@ -5,9 +5,16 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "rootDir": "src",
-    "outDir": "public",
+    "types": ["vite/client"],
+    "noEmit": true,
     "sourceMap": true
   },
-  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"]
+  "include": [
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx",
+    "src/router.tsx",
+    "src/routes/**/*.ts",
+    "src/routes/**/*.tsx",
+    "src/routeTree.gen.ts"
+  ]
 }

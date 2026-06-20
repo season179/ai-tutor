@@ -9,24 +9,26 @@
     "pnpm": ">=11 <12"
   },
   "scripts": {
-    "build": "pnpm build:client && pnpm check:worker-types && tsc -p tsconfig.server.json && tsc -p tsconfig.worker.json",
-    "build:client": "tsc -p tsconfig.client.json --noEmit && esbuild src/client/main.tsx --bundle --format=esm --platform=browser --jsx=automatic --loader:.tsx=tsx --sourcemap --outfile=public/client.js",
+    "build": "vite build",
     "check:worker-types": "wrangler types --check",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run",
     "dev": "PORTLESS_TLD=dev portless",
-    "dev:worker": "pnpm build:client && wrangler dev --port ${PORT:-8787}",
+    "dev:vite": "vite dev --port ${PORT:-3000}",
+    "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply ai-tutor-sessions --local",
     "db:migrate:remote": "wrangler d1 migrations apply ai-tutor-sessions --remote",
-    "typecheck": "pnpm check:worker-types && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.worker.json && pnpm test",
+    "typecheck": "pnpm check:worker-types && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.worker.json && pnpm test",
     "test": "tsc -p tsconfig.server.json && node --experimental-strip-types --test test/**/*.test.ts"
   },
   "portless": {
     "name": "ai-tutor",
-    "script": "dev:worker"
+    "script": "dev:vite"
   },
   "dependencies": {
     "@openai/agents": "^0.11.6",
+    "@tanstack/react-router": "^1.170.16",
+    "@tanstack/react-start": "^1.168.26",
     "aws4fetch": "^1.0.20",
     "better-auth": "^1.6.19",
     "react": "^19.2.7",
@@ -34,13 +36,16 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.42.0",
     "@cloudflare/workers-types": "^4.20260613.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
     "esbuild": "^0.28.1",
     "portless": "0.14.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.100.0"
+    "vite": "^8.0.16",
+    "wrangler": "^4.102.0"
   }
 }
