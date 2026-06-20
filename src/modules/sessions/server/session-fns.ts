@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { authenticateServerRequest } from "../../../server-request-context.js";
+import { bodySizeCapMiddleware } from "../../../core/body-cap-middleware.js";
+import { errorStatusMiddleware } from "../../../core/error-status-middleware.js";
 import {
   appendSessionEvent,
   createSession,
@@ -17,14 +19,20 @@ import type {
 // The handlers still re-parse their `body`/`request` payloads, so the validators
 // only pass input through to give callers an end-to-end type while the handler
 // keeps owning runtime validation. Reads are GET; writes are POST (server fns are
-// GET/POST only — the previous PATCH was just transport).
+// GET/POST only — the previous PATCH was just transport). Every fn carries
+// errorStatusMiddleware (maps HttpError.status onto the wire HTTP status — see
+// core/error-status-middleware.ts); writes also carry the shared 16 KB body cap
+// that the old /api/* handler enforced before Phase 4.
 
-export const listSessionsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { context, store } = await authenticateServerRequest();
-  return listSessions(context, store);
-});
+export const listSessionsFn = createServerFn({ method: "GET" })
+  .middleware([errorStatusMiddleware])
+  .handler(async () => {
+    const { context, store } = await authenticateServerRequest();
+    return listSessions(context, store);
+  });
 
 export const createSessionFn = createServerFn({ method: "POST" })
+  .middleware([bodySizeCapMiddleware, errorStatusMiddleware])
   .validator((input: { title?: string }) => input)
   .handler(async ({ data }) => {
     const { context, store } = await authenticateServerRequest();
@@ -32,6 +40,7 @@ export const createSessionFn = createServerFn({ method: "POST" })
   });
 
 export const getSessionFn = createServerFn({ method: "GET" })
+  .middleware([errorStatusMiddleware])
   .validator((input: { sessionId: string }) => input)
   .handler(async ({ data }) => {
     const { context, store } = await authenticateServerRequest();
@@ -39,6 +48,7 @@ export const getSessionFn = createServerFn({ method: "GET" })
   });
 
 export const updateSessionFn = createServerFn({ method: "POST" })
+  .middleware([bodySizeCapMiddleware, errorStatusMiddleware])
   .validator((input: { request: UpdateTutorSessionRequest; sessionId: string }) => input)
   .handler(async ({ data }) => {
     const { context, store } = await authenticateServerRequest();
@@ -46,6 +56,7 @@ export const updateSessionFn = createServerFn({ method: "POST" })
   });
 
 export const appendSessionEventFn = createServerFn({ method: "POST" })
+  .middleware([bodySizeCapMiddleware, errorStatusMiddleware])
   .validator((input: { request: AppendSessionEventRequest; sessionId: string }) => input)
   .handler(async ({ data }) => {
     const { context, store } = await authenticateServerRequest();

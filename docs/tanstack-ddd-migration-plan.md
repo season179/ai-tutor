@@ -275,10 +275,28 @@ file (`r2-cors.json` vs `config/r2-problem-images-cors.json` — keep one, re-ap
   `Text`, `Document`, `Doctype`, `HTMLRewriter`, `ContentOptions`, …) removed. `el.append(stream)`
   now correctly errors. Wired into `check:worker-types` + a new `pnpm types` script; the stripped
   file is committed alongside the source.
-- **Still TODO this phase:** remove esbuild + the dead `r2-cors.json`; fold in the `b4bbfb9`
-  review findings (16 KB session body cap via shared middleware; `HttpError`→HTTP-status — but
-  note TanStack #5107/#5407: `setResponseStatus` is a no-op on `throw` and in global middleware,
-  so the wire-level 500 is framework-blocked; client already recovers the real code via seroval).
+- **Dead build pieces removed.** `esbuild` is no longer a direct devDependency (Vite 8 uses
+  Rolldown; esbuild resolves transitively via Vite/wrangler/vitest). The superseded root
+  `r2-cors.json` is gone — `config/r2-problem-images-cors.json` is the canonical CORS snippet
+  (no deploy/CI/wrangler config referenced either; re-applying CORS to the live bucket is a
+  separate, user-confirmed step). Stale `public/client.js` `.gitignore` entries dropped.
+- **Folded-in `b4bbfb9` review findings:**
+  - **16 KB body cap restored** as shared **function** middleware (`core/body-cap-middleware.ts`)
+    on every session/problem write fn — the `maxJsonRequestBodyBytes` guard the old `/api/*`
+    handler lost in Phase 4. Voice keeps its own 8 MB cap. Unit-tested (5 tests).
+  - **`HttpError` → wire HTTP status.** `core/error-status-middleware.ts` catches thrown
+    errors with a numeric `.status` and `setResponseStatus`es them (429 also restores
+    `Retry-After: 60`). Applied per-fn to all 10 server fns — global registration was rejected:
+    three open TanStack bugs flag it (#5107 setResponseStatus no-ops on throw, #5239 global
+    middleware fires multiple times, #5407 status/headers set globally don't propagate), and it
+    can't be validated locally (the direct-call convention bypasses middleware; only the real
+    RPC path runs it). **Confirm the status reaches the wire during live pre-merge validation.**
+  - **Dead 403 branch** in `use-tutor-sessions.ts` removed; the list-error now maps **401**
+    (the real unauthenticated case) to the `auth` kind.
+  - **Not fixable in our code (noted):** `no-store` is dropped on the Start error response path
+    (`@tanstack/start-server-core` hardcodes error-path headers) — framework-side.
+- **Still TODO before merge:** the live Google OAuth round-trip + voice/tutoring loop validation
+  (no client tests exist), and `wrangler types` regeneration + commit if the build complains.
 
 ### Phase 6 — Optional further TanStack (only where it earns its place)
 TanStack **Form** for the problem composer; **Store**/**Pacer** for voice-turn debounce/local

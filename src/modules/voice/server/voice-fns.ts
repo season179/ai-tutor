@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 
 import { authenticateServerRequest, workerEnv } from "../../../server-request-context.js";
 import { HttpError } from "../../../core/http-error.js";
+import { errorStatusMiddleware } from "../../../core/error-status-middleware.js";
 import { createVoiceSessionWithStore } from "../voice-session-handler.js";
 import { handleVoicePipelineTurnWithStore } from "../voice-pipeline-service.js";
 import { parseVoicePipelineTurnRequest } from "../voice-session-schema.js";
@@ -17,8 +18,9 @@ import {
 // Server-function adapters over the voice domain. Both endpoints carry the IP-based
 // rate limit that used to live in the Worker entry — moved here so the limit travels
 // with the voice logic now that the requests arrive as `/_serverFn/*` calls rather
-// than `/api/voice/*`. The realtime/WebRTC adapter is a direct browser↔OpenAI path
-// and intentionally stays out of this file.
+// than `/api/voice/*`. Both also carry errorStatusMiddleware so the 429/413/401 they
+// can throw map onto the wire HTTP status. The realtime/WebRTC adapter is a direct
+// browser↔OpenAI path and intentionally stays out of this file.
 
 /** Derive the per-caller rate-limit key from the request, mirroring the old Worker entry. */
 function readCallerKey(request: Request): string {
@@ -69,6 +71,7 @@ function assertVoiceTurnWithinLimit(turn: VoicePipelineTurnRequest): void {
 }
 
 export const createVoiceSessionFn = createServerFn({ method: "POST" })
+  .middleware([errorStatusMiddleware])
   .validator((input: CreateVoiceSessionRequest) => input)
   .handler(async ({ data }): Promise<VoiceSessionDescriptor> => {
     await enforceVoiceRateLimit();
@@ -77,6 +80,7 @@ export const createVoiceSessionFn = createServerFn({ method: "POST" })
   });
 
 export const voicePipelineTurnFn = createServerFn({ method: "POST" })
+  .middleware([errorStatusMiddleware])
   .validator((input: VoicePipelineTurnRequest) => input)
   .handler(async ({ data }): Promise<VoicePipelineTurnResponse> => {
     await enforceVoiceRateLimit();

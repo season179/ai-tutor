@@ -44,7 +44,10 @@ function sessionsQueryKey(userId: string | undefined): readonly [string, string 
 
 function toSessionListError(error: unknown): SessionListError {
   if (error instanceof SessionApiError) {
-    if (error.status === 403) {
+    // Session endpoints only ever throw 401 (no session) or 404 (not owned); 401 is
+    // the unauthenticated case. (A pre-existing 403 branch was dead — the server has
+    // never emitted 403 here.)
+    if (error.status === 401) {
       return {
         kind: "auth",
         message: "Sign in required to load sessions."
