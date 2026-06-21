@@ -34,7 +34,6 @@ import {
   seedKickoffSession,
   seedNonSharingStepLoop,
   seedStepLoopSession,
-  sessionState,
   sharingFrame,
   voiceServiceEnv
 } from "./helpers/voice-fixtures.ts";
@@ -139,6 +138,41 @@ test("a tutor that keeps proposing an illegal move across all attempts fails the
   // The generator exhausted its retry budget; speech was never synthesized.
   assert.equal(fake.calls.counts.tutor, 2);
   assert.equal(fake.calls.counts.tts, 0);
+});
+
+test("re-asks the generator when the parser rejects the first move, then accepts a legal one", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Parser-rejection re-ask" });
+  await seedGateSession(store, session.id);
+
+  // The two re-ask paths in proposeTutorAction are DISTINCT: `illegal` (above) hits the
+  // validator (a legal-but-forbidden move); `throws` hits the PARSER, when the model emits a
+  // move string that isn't a known ProposedMove at all. Both must re-ask and feed the
+  // rejection reason forward. This locks the parser path (§5b path i); the illegal test
+  // next door locks the validator path (§5b path ii).
+  const restate = {
+    move: "restate_prompt",
+    nextPhase: "frame_task",
+    spokenUtterance: "In your own words, what are we finding?"
+  };
+
+  fake = installVoiceProviders({
+    gateChecker: { accepted: false, notes: "Keep going." },
+    tutor: [{ kind: "throws", action: { ...restate, move: "not-a-real-move" } }, restate],
+    tts: new Uint8Array([1])
+  });
+
+  const response = await handleVoicePipelineTurnWithStore(
+    { sessionId: session.id, text: "I think we share them out." },
+    voiceServiceEnv,
+    store,
+    context
+  );
+
+  assert.equal(fake.calls.counts.tutor, 2);
+  assert.equal(response.tutorText, restate.spokenUtterance);
+  // The parser's rejection reason is fed back into the second prompt, same as the validator's.
+  assert.match(fake.calls.tutorBodies()[1] ?? "", /previous attempt was rejected/i);
 });
 
 test("a tutor response that is not valid JSON fails the turn with a 502 (not caught by the retry loop)", async () => {
@@ -364,6 +398,62 @@ test("a gate-checker HTTP error fails the whole turn with the upstream status (u
   assert.equal(fake.calls.counts.tts, 0);
 });
 
+test("a gate-checker 2xx response with no output text kills the turn with a 502 (unwrapped, unlike the verifier)", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Gate empty body" });
+  await seedGateSession(store, session.id, "needs_context_read");
+
+  // The mirror of the verifier emptyBody case above, and the asymmetry is the point: a
+  // gate-checker response that returns 2xx but carries no verdict text makes
+  // checkGateStage THROW HttpError(502), and because the gate check runs unwrapped (the
+  // service calls it directly, not through gradeStudentTurn's try/catch), the turn dies —
+  // it does NOT fail safe to "gate not accepted". The same shape from the verifier is
+  // swallowed to unknown. Locking both halves keeps the asymmetry honest.
+  fake = installVoiceProviders({
+    gateChecker: { emptyBody: true },
+    tutor: { move: "three_reads_1", nextPhase: "frame_task", spokenUtterance: "Read it again." },
+    tts: new Uint8Array([1])
+  });
+
+  await assert.rejects(
+    handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "Some context about the problem." },
+      voiceServiceEnv,
+      store,
+      context
+    ),
+    (error: unknown) => error instanceof HttpError && error.status === 502
+  );
+  assert.equal(fake.calls.counts.tutor, 0);
+  assert.equal(fake.calls.counts.tts, 0);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TTS failure: the speech step is the last before the response — its failure kills the turn
+// ──────────────────────────────────────────────────────────────────────────────
+
+test("a TTS HTTP error fails the turn with the upstream status and returns no audio", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "TTS 500" });
+  await seedGateSession(store, session.id);
+
+  fake = installVoiceProviders({
+    gateChecker: { accepted: false, notes: "Not a restatement." },
+    tutor: { move: "restate_prompt", nextPhase: "frame_task", spokenUtterance: "Try again?" },
+    tts: { status: 500 }
+  });
+
+  await assert.rejects(
+    handleVoicePipelineTurnWithStore(
+      { sessionId: session.id, text: "Just tell me." },
+      voiceServiceEnv,
+      store,
+      context
+    ),
+    (error: unknown) => error instanceof HttpError && error.status === 500
+  );
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Pure domain invariants
 // ──────────────────────────────────────────────────────────────────────────────
@@ -537,7 +627,3 @@ test("a kickoff after the session has advanced past session_open is rejected wit
   );
   assert.equal(fake.calls.counts.tutor, 1);
 });
-
-// The sessionState helper is exercised throughout; this anchor keeps it part of the
-// compiled surface even when no single test above depends on it in isolation.
-void sessionState;

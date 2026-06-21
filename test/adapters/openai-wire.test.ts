@@ -27,6 +27,16 @@ import {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Response parsing: the output-content fallback
+//
+// These three unit tests exercise the SHARED `extractOutputText` in
+// `src/providers/openai/openai-responses.ts`, which `gate-checker.ts` and
+// `verifier-agent.ts` import. NOTE: `voice-pipeline-service.ts` currently carries its
+// OWN private copy of the same function (called from its tutor-generator path), so these
+// unit tests do not directly cover the pipeline's copy — only the integration test below
+// ("the pipeline reads a tutor action out of the output-content fallback shape") does,
+// end-to-end. The two copies are identical today; collapsing them is a production cleanup
+// that belongs to the later provider ADR (out of scope per plan §13). If you edit one
+// copy, the other must follow, and this test will not catch a pipeline-only divergence.
 // ──────────────────────────────────────────────────────────────────────────────
 
 test("extractOutputText prefers the top-level output_text when present", () => {

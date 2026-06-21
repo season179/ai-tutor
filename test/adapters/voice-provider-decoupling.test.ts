@@ -8,13 +8,15 @@
  * toolchain. It fails the suite — loudly — the moment a Tier-1 file reaches into the
  * OpenAI provider code or mentions wire vocabulary.
  *
- * Two checks, mirroring §8.1 (structural import barrier) and §8.3 (wire-vocab grep):
+ * The checks mirror §8.1 (structural import barrier) and §8.3 (wire-vocab grep):
  *
- * 1. Tier-1 files may import ONLY the `installVoiceProviders` domain surface from the
- *    helpers, never the wire-specific exports (`routeVoiceProviderCall`,
- *    `makeOpenAiProviderFake`) or any `src/providers/openai/*` module.
- * 2. Tier-1 files contain no wire vocabulary (`api.openai.com`, the `/v1/...` paths,
- *    `output_text`, `output[`, `content[`, `FormData`, `Bearer `).
+ * - Tier-1 files exist (guards against a rename slipping the barrier).
+ * - Tier-1 files contain no wire vocabulary (`api.openai.com`, the `/v1/...` paths,
+ *   `output_text`, `output[`, `content[`, `FormData`, `Bearer `).
+ * - Tier-1 files may import ONLY the `installVoiceProviders` domain surface from the
+ *   helpers, never the wire-specific exports (`routeVoiceProviderCall`,
+ *   `makeOpenAiProviderFake`).
+ * - Tier-1 files import nothing under `src/providers/openai/*`.
  *
  * The second-impl proof (§8.2 — run the Tier-1 suite against an OpenRouter wire) is a
  * future CI job; it can't be expressed until that impl exists.
@@ -107,16 +109,8 @@ test("no Tier-1 file imports anything under src/providers/openai", () => {
   assert.deepEqual(offenders, [], "Tier-1 files must not import the OpenAI provider");
 });
 
-test("the voice-pipeline Tier-1 surface is the only sanctioned entrypoint for portable tests", () => {
-  // Corollary of the import barrier: the voice-pipeline-specific Tier-1 files must route
-  // through the harness. We deliberately do NOT scan the whole test tree for wire
-  // vocabulary — `gate-checker.test.ts`, `verifier-agent.test.ts`, and friends test the
-  // adapter modules DIRECTLY and are legitimately wire-coupled; they're out of scope for
-  // this voice-pipeline decoupling. The guardrail is that the Tier-1 list above is
-  // exhaustive for voice-pipeline tests, which the first three tests already enforce.
-  const tierOneSet = new Set(tierOneFiles.map((file) => file));
-  for (const file of tierOneSet) {
-    // Re-asserting existence keeps this test meaningful on its own.
-    readFileSync(file, "utf8");
-  }
-});
+// Scope note: we deliberately do NOT scan the whole test tree for wire vocabulary.
+// `gate-checker.test.ts`, `verifier-agent.test.ts`, and friends test the adapter modules
+// DIRECTLY and are legitimately wire-coupled; they're out of scope for this voice-pipeline
+// decoupling. The guardrail is that the Tier-1 list above is exhaustive for voice-pipeline
+// tests, which the tests above already enforce.

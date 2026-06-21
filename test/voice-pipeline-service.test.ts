@@ -20,7 +20,6 @@ import { handleVoicePipelineTurnWithStore } from "../src/modules/voice/voice-pip
 import { installVoiceProviders, type VoiceProviderFake } from "./helpers/fake-voice-providers.ts";
 import {
   context,
-  multiplicationFrame,
   ownerKey,
   problemImage,
   seedAnswerCheckSession,
@@ -756,7 +755,3 @@ test("persists reflection and advances to wrap_up", async () => {
   assert.equal(detail?.reflection?.reflectionText, "Drawing one for each friend helped me see it.");
   assert.equal(detail?.session.currentPhase, "wrap_up");
 });
-
-// `multiplicationFrame` is exercised by the seedNonSharingStepLoop helper above; keep the
-// import live so the frame's shape stays part of this module's compiled contract.
-void multiplicationFrame;
