@@ -11,6 +11,7 @@ codedb.snapshot
 .DS_Store
 .lavish/
 .commandcode/
+.serena/
 
 # Logs
 logs
