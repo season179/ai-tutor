@@ -148,6 +148,159 @@ test("projects a validated turn to the legacy public lesson shape and advances t
   }
 });
 
+test("kickoff turn opens with a tutor move and no student turn", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Kickoff" });
+  // Mirror production at confirm time: the problem is framed and the gate is seeded
+  // while the session is still at session_open, waiting for the tutor to open.
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId: session.id
+  });
+  await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
+    activeStep: null,
+    currentPhase: "session_open",
+    gateStatus: "needs_context_read",
+    supportLevel: 0
+  });
+
+  const originalFetch = globalThis.fetch;
+  let tutorPrompt = "";
+  let gateOrVerifierCalls = 0;
+  const action = {
+    move: "rapport_check",
+    nextPhase: "frame_task",
+    spokenUtterance: "Hi! I'm Coach Echo. Let's read this sharing problem together — ready?"
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      if (isGateCheckerRequest(init) || isVerifierRequest(init)) {
+        gateOrVerifierCalls += 1;
+      }
+      tutorPrompt = String(init?.body ?? "");
+      return Response.json({ output_text: JSON.stringify(action) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      assert.equal(JSON.parse(String(init?.body)).input, action.spokenUtterance);
+      return new Response(new Uint8Array([1, 2, 3, 4]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { kickoff: true, sessionId: session.id },
+      env,
+      store,
+      context
+    );
+
+    assert.equal(response.tutorText, action.spokenUtterance);
+    assert.equal(response.transcript, "");
+    assert.equal(response.session.currentPhase, "frame_task");
+    // The opening turn never grades or gate-checks — only the move generator runs.
+    assert.equal(gateOrVerifierCalls, 0);
+    assert.match(tutorPrompt, /opening turn/i);
+
+    const detail = await store.getSession(ownerKey, session.id);
+    assert.equal(detail?.session.currentPhase, "frame_task");
+    assert.equal(detail?.session.status, "active");
+    assert.ok(detail?.events.some((event) => event.message === "Tutor turn"));
+    // The tutor spoke first: no student-side events were written this turn.
+    assert.equal(detail?.events.some((event) => event.message === "Student turn"), false);
+    assert.equal(detail?.events.some((event) => event.message === "Problem image submitted"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("kickoff turn advances even if the model proposes staying at session_open", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Kickoff stays" });
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId: session.id
+  });
+  await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
+    activeStep: null,
+    currentPhase: "session_open",
+    gateStatus: "needs_context_read",
+    supportLevel: 0
+  });
+
+  const originalFetch = globalThis.fetch;
+  // The model returns a legal-but-self-defeating nextPhase. A naive clamp to fromPhase
+  // would leave the session at session_open, so a second kickoff would greet again.
+  const action = {
+    move: "rapport_check",
+    nextPhase: "session_open",
+    spokenUtterance: "Hi! I'm Coach Echo. Let's read this together."
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      return Response.json({ output_text: JSON.stringify(action) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1, 2, 3, 4]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { kickoff: true, sessionId: session.id },
+      env,
+      store,
+      context
+    );
+
+    // Forced forward so the session_open guard would reject a second kickoff.
+    assert.equal(response.session.currentPhase, "frame_task");
+    assert.notEqual(response.session.currentPhase, "session_open");
+
+    const detail = await store.getSession(ownerKey, session.id);
+    assert.equal(detail?.session.currentPhase, "frame_task");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("kickoff turn is rejected once the session has started", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Kickoff guard" });
+  await seedThreeReadsSession(store, session.id);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    throw new Error(`Unexpected fetch: ${String(input)}`);
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      handleVoicePipelineTurnWithStore({ kickoff: true, sessionId: session.id }, env, store, context),
+      /already started/
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("reads the tutor action from response output content", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Pipeline test" });

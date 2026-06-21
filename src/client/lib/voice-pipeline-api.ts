@@ -38,3 +38,10 @@ export function createAudioVoicePipelineTurn(
     sessionId
   };
 }
+
+export function createKickoffVoicePipelineTurn(sessionId: string): VoicePipelineTurnRequest {
+  return {
+    kickoff: true,
+    sessionId
+  };
+}

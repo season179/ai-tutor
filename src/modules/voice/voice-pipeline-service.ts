@@ -91,6 +91,9 @@ type TutorTurnInput = {
   detail: TutorSessionDetail;
   gateStatus: ComprehensionGateStatus | null;
   image: VoicePreparedImage | null;
+  // True only for the tutor's opening turn (no student input yet); steers the move
+  // generator to greet and orient rather than respond to a student answer.
+  kickoff?: boolean;
   problemContext: ProblemContextRecord | null;
   stepVerifierVerdict: StepVerifierVerdict | null;
   studentText: string;
@@ -121,6 +124,14 @@ export async function handleVoicePipelineTurnWithStore(
   }
 
   const options = createVoicePipelineOptions(env);
+
+  // The tutor's opening turn: it speaks first, before the student says anything. Skip the
+  // student-text/gate/grader machinery and just produce the first move from the confirmed
+  // problem. Branches early because none of the per-student-turn artifacts apply.
+  if (request.kickoff) {
+    return handleKickoffTurn(detail, request.sessionId, options, store, requestContext.ownerKey);
+  }
+
   const studentText = await readStudentText(request, options);
   const fromPhase = detail.session.currentPhase;
   let gateStatus = detail.session.gateStatus;
@@ -282,6 +293,105 @@ export async function handleVoicePipelineTurnWithStore(
     events: turnEvents,
     expectedPhase: fromPhase,
     reflection: fromPhase === "memory_write" && studentText.trim() ? { reflectionText: studentText } : null
+  });
+  if (!committed) {
+    throw new HttpError(409, "This session was advanced by another turn. Please retry.");
+  }
+
+  return response;
+}
+
+/**
+ * The tutor's opening turn. Produces the first move (a greeting that orients to the
+ * confirmed problem) with no student input: no transcription, gate check, or grading,
+ * and the transcript records only the tutor turn. The session must still be at
+ * `session_open`, so an already-started session can't be re-opened (the optimistic phase
+ * lock on commit also blocks a concurrent double-open).
+ */
+async function handleKickoffTurn(
+  detail: TutorSessionDetail,
+  sessionId: string,
+  options: VoicePipelineOptions,
+  store: SessionStore,
+  ownerKey: string
+): Promise<VoicePipelineTurnResponse> {
+  const fromPhase = detail.session.currentPhase;
+  if (fromPhase !== "session_open") {
+    throw new HttpError(409, "This tutoring session has already started.");
+  }
+
+  const gateStatus = detail.session.gateStatus;
+  const problemContext = detail.problemContext;
+  const supportLevel = detail.session.supportLevel;
+  const activeStep = detail.session.activeStep;
+
+  const action = await proposeTutorAction(
+    {
+      activeStep,
+      detail,
+      gateStatus,
+      image: null,
+      kickoff: true,
+      problemContext,
+      stepVerifierVerdict: null,
+      studentText: "",
+      supportLevel
+    },
+    options
+  );
+
+  const audio = await createTutorSpeech(action.spokenUtterance, options);
+  const publicLesson = projectToPublicLesson(action, null);
+  // No server phase overrides apply at session_open (they all key off step_loop/answer_check/
+  // memory_write), so the proposed nextPhase is the only advance to honour.
+  let toPhase = nextPhaseFor(fromPhase, action, gateStatus);
+  // The kickoff's whole purpose is to advance into the Three Reads flow. If the model
+  // proposes staying at session_open (a legal self-transition), the phase guard above would
+  // pass on a *second* kickoff and the tutor would greet again — so force it forward to the
+  // first real frame. This keeps the "an already-started session can't be re-opened"
+  // invariant honest rather than relying on the model to leave session_open.
+  if (toPhase === "session_open") {
+    toPhase = "frame_task";
+  }
+
+  const sessionState = buildSessionState({
+    activeStep,
+    checkerVerdict: null,
+    fromPhase,
+    gateStatus,
+    phase: toPhase,
+    problemContext,
+    supportLevel
+  });
+  const response = serializeVoicePipelineTurnResponse({
+    audio,
+    lesson: publicLesson,
+    session: sessionState,
+    transcript: "",
+    tutorText: action.spokenUtterance
+  });
+
+  const committed = await store.commitTurn(ownerKey, sessionId, {
+    activate: detail.session.status !== "active",
+    advance: { activeStep, currentPhase: toPhase, gateStatus, supportLevel },
+    comprehensionCheck: null,
+    events: [
+      {
+        message: tutorTurnEventMessage,
+        value: {
+          schemaVersion: tutorActionSchemaVersion,
+          lesson: publicLesson,
+          move: action.move,
+          phase: fromPhase,
+          nextPhase: toPhase,
+          gateStatus,
+          text: action.spokenUtterance,
+          verdict: null
+        }
+      }
+    ],
+    expectedPhase: fromPhase,
+    reflection: null
   });
   if (!committed) {
     throw new HttpError(409, "This session was advanced by another turn. Please retry.");
@@ -527,7 +637,13 @@ async function proposeTutorAction(
       apiKey: requireOpenAiApiKey(options),
       body: JSON.stringify({
         input: createTutorInput(input),
-        instructions: tutorActionInstructions(phase, gateStatus, input.stepVerifierVerdict, rejectionReasons),
+        instructions: tutorActionInstructions(
+          phase,
+          gateStatus,
+          input.stepVerifierVerdict,
+          rejectionReasons,
+          input.kickoff ?? false
+        ),
         model: options.tutorModel,
         text: {
           format: {
@@ -709,10 +825,14 @@ function tutorActionInstructions(
   phase: SessionPhase,
   gateStatus: ComprehensionGateStatus | null,
   stepVerifierVerdict: StepVerifierVerdict | null,
-  rejectionReasons: string[]
+  rejectionReasons: string[],
+  kickoff: boolean
 ): string {
   const allowed = allowedMoves(phase).join(", ");
   const forbidden = forbiddenMoves(phase).join(", ");
+  const kickoffNote = kickoff
+    ? "\nThis is the opening turn — the student has not spoken yet. Greet them warmly as Coach Echo, briefly name the problem you'll work through together (use the problem frame), and invite them into the first reading. Do not solve, hint at, or reveal any answer."
+    : "";
   const gateNote =
     phase === "frame_task" && isGateReadStatus(gateStatus)
       ? gateReadNote(gateStatus)
@@ -738,7 +858,7 @@ You are the move generator for a server-enforced tutoring state machine. The ser
 
 Current phase: "${phase}".
 Moves you may use this phase: ${allowed}.
-Never use these moves: ${forbidden} — they solve or reveal the answer.${gateNote}${verifierNote}
+Never use these moves: ${forbidden} — they solve or reveal the answer.${kickoffNote}${gateNote}${verifierNote}
 
 Hard rules:
 - Return only the requested JSON schema.

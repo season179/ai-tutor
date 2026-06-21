@@ -543,19 +543,22 @@ export function useProblemContextStep1({
     [extractionNotes, extractionOutcome, objectKey, persistContext, preparedImage]
   );
 
-  const confirmPrompt = useCallback(() => {
+  const confirmPrompt = useCallback(async () => {
     const trimmed = imagePrompt.trim();
     if (!trimmed) {
       return;
     }
 
     setPromptConfirmed(true);
-    void persistContext(preparedImage, trimmed, objectKey ?? null, {
+    setStatus("Question confirmed. Coach Echo is starting…", "working");
+    // Await the persist so the confirmed question (and the gate the server seeds on
+    // confirmation) is durable before the caller auto-starts Coach Echo's opening turn,
+    // which reads that state back from the store.
+    await persistContext(preparedImage, trimmed, objectKey ?? null, {
       extractionNotes,
       extractionOutcome,
       promptConfirmed: true
     });
-    setStatus("Question confirmed. Start when you're ready.", "ready");
   }, [
     extractionNotes,
     extractionOutcome,
