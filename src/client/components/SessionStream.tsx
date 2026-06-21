@@ -1,7 +1,16 @@
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { classNames } from "../lib/class-names.js";
 import type { TranscriptTurn } from "../lib/transcript.js";
+
+// useLayoutEffect follows the conversation before paint, so a new turn never
+// flashes in at the old scroll position; fall back to useEffect during SSR to
+// avoid the "useLayoutEffect does nothing on the server" warning.
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+// How close to the foot still counts as "reading the latest" — slack for
+// sub-pixel rounding and the sticky problem pin's offset.
+const STICK_TO_BOTTOM_PX = 96;
 
 type SessionStreamProps = {
   goalStatus: "empty" | "framed" | "complete";
@@ -16,8 +25,87 @@ type SessionStreamProps = {
  * empty and inert until the comprehension gate (M3) decides what we're finding.
  */
 export function SessionStream({ goalStatus, problemPin, turns, unknownTarget }: SessionStreamProps) {
+  const streamRef = useRef<HTMLDivElement | null>(null);
+  const atBottomRef = useRef(true);
+  const prevLastIdRef = useRef<number | null>(null);
+  const [showJump, setShowJump] = useState(false);
+  const [hasNew, setHasNew] = useState(false);
+
+  // The stream is pinned to the foot: hide the catch-up affordance. One source
+  // of truth for "we're at the bottom now", shared by the scroll button, the
+  // programmatic follow, and the empty-stream reset.
+  const markAtBottom = () => {
+    atBottomRef.current = true;
+    setShowJump(false);
+    setHasNew(false);
+  };
+
+  const scrollToBottom = () => {
+    const el = streamRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+    markAtBottom();
+  };
+
+  const handleScroll = () => {
+    const el = streamRef.current;
+    if (!el) {
+      return;
+    }
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_TO_BOTTOM_PX;
+    // Only act on a transition across the threshold. A continuous scroll fires
+    // this every frame; re-asserting the same state each time is wasted work.
+    if (atBottom === atBottomRef.current) {
+      return;
+    }
+    if (atBottom) {
+      markAtBottom();
+    } else {
+      atBottomRef.current = false;
+      setShowJump(true);
+    }
+  };
+
+  // Follow the conversation as it grows — but never yank a reader who has
+  // scrolled up. Auto-scroll only when they're already at the foot, or when the
+  // newest turn is their own; otherwise raise the "new messages" affordance.
+  useIsomorphicLayoutEffect(() => {
+    const lastTurn = turns.length > 0 ? turns[turns.length - 1]! : null;
+    const prevLastId = prevLastIdRef.current;
+    prevLastIdRef.current = lastTurn ? lastTurn.id : null;
+
+    if (!lastTurn) {
+      markAtBottom();
+      return;
+    }
+
+    // Does this render continue the same transcript, or is it a fresh one (first
+    // paint / a switched session)? The previous tail id surviving into the new
+    // turns means we only appended; its absence means the whole stream changed.
+    const sameTranscript = prevLastId !== null && turns.some((turn) => turn.id === prevLastId);
+
+    if (!sameTranscript) {
+      scrollToBottom();
+      return;
+    }
+
+    if (lastTurn.id === prevLastId) {
+      return; // same transcript, nothing new at the tail
+    }
+
+    const studentSpoke = turns.some((turn) => turn.id > prevLastId! && turn.role === "child");
+
+    if (studentSpoke || atBottomRef.current) {
+      scrollToBottom();
+    } else {
+      setHasNew(true);
+    }
+  }, [turns]);
+
   return (
-    <div className="cc-stream">
+    <div className="cc-stream" onScroll={handleScroll} ref={streamRef}>
       {problemPin}
 
       {/* The north-star target stays hidden until the comprehension gate (M3) names
@@ -50,7 +138,35 @@ export function SessionStream({ goalStatus, problemPin, turns, unknownTarget }: 
           ))}
         </div>
       ) : null}
+
+      {showJump ? (
+        <button
+          aria-label="Jump to the latest message"
+          className="cc-jump"
+          onClick={scrollToBottom}
+          type="button"
+        >
+          <JumpArrow />
+          {hasNew ? "New messages" : "Latest"}
+        </button>
+      ) : null}
     </div>
+  );
+}
+
+function JumpArrow() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2.4"
+      viewBox="0 0 24 24"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
   );
 }
 
