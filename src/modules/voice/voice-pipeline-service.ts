@@ -344,7 +344,15 @@ async function handleKickoffTurn(
   const publicLesson = projectToPublicLesson(action, null);
   // No server phase overrides apply at session_open (they all key off step_loop/answer_check/
   // memory_write), so the proposed nextPhase is the only advance to honour.
-  const toPhase = nextPhaseFor(fromPhase, action, gateStatus);
+  let toPhase = nextPhaseFor(fromPhase, action, gateStatus);
+  // The kickoff's whole purpose is to advance into the Three Reads flow. If the model
+  // proposes staying at session_open (a legal self-transition), the phase guard above would
+  // pass on a *second* kickoff and the tutor would greet again — so force it forward to the
+  // first real frame. This keeps the "an already-started session can't be re-opened"
+  // invariant honest rather than relying on the model to leave session_open.
+  if (toPhase === "session_open") {
+    toPhase = "frame_task";
+  }
 
   const sessionState = buildSessionState({
     activeStep,

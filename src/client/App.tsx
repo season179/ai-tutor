@@ -140,6 +140,13 @@ export function App() {
       .then(() => {
         if (!isRunning && liveSession.currentPhase === "session_open") {
           beginSession(true);
+          return;
+        }
+        // We didn't auto-start, so the optimistic "Coach Echo is starting…" confirmPrompt
+        // set is stale: clear it. Skip this when a voice session is running — that owns the
+        // status (e.g. "Connected…"), and overwriting it would flicker the badge.
+        if (!isRunning) {
+          setStatus("Question confirmed.", "ready");
         }
       })
       .catch((error: unknown) => {

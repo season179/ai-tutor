@@ -222,6 +222,65 @@ test("kickoff turn opens with a tutor move and no student turn", async () => {
   }
 });
 
+test("kickoff turn advances even if the model proposes staying at session_open", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Kickoff stays" });
+  await store.saveProblemContext(ownerKey, {
+    extractionConfidence: "high",
+    extractionOutcome: "extracted",
+    frame: sharingFrame,
+    r2ObjectKey: "session/image.jpg",
+    sessionId: session.id
+  });
+  await store.advanceSessionPhase(ownerKey, session.id, "session_open", {
+    activeStep: null,
+    currentPhase: "session_open",
+    gateStatus: "needs_context_read",
+    supportLevel: 0
+  });
+
+  const originalFetch = globalThis.fetch;
+  // The model returns a legal-but-self-defeating nextPhase. A naive clamp to fromPhase
+  // would leave the session at session_open, so a second kickoff would greet again.
+  const action = {
+    move: "rapport_check",
+    nextPhase: "session_open",
+    spokenUtterance: "Hi! I'm Coach Echo. Let's read this together."
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = String(input);
+
+    if (url === "https://api.openai.com/v1/responses") {
+      return Response.json({ output_text: JSON.stringify(action) });
+    }
+
+    if (url === "https://api.openai.com/v1/audio/speech") {
+      return new Response(new Uint8Array([1, 2, 3, 4]));
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await handleVoicePipelineTurnWithStore(
+      { kickoff: true, sessionId: session.id },
+      env,
+      store,
+      context
+    );
+
+    // Forced forward so the session_open guard would reject a second kickoff.
+    assert.equal(response.session.currentPhase, "frame_task");
+    assert.notEqual(response.session.currentPhase, "session_open");
+
+    const detail = await store.getSession(ownerKey, session.id);
+    assert.equal(detail?.session.currentPhase, "frame_task");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("kickoff turn is rejected once the session has started", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Kickoff guard" });
