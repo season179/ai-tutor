@@ -117,10 +117,31 @@ export function App() {
     tutorSessions.eventCount
   );
 
-  const handleStart = () => {
-    const greet = !activeSessionHasPriorActivity;
+  const beginSession = (greet: boolean) => {
     startSession({ greet })
       .then(() => tutorSessions.refreshSessions())
+      .catch((error: unknown) => {
+        setStatus(errorMessage(error, "Unexpected error."), "error");
+      });
+  };
+
+  const handleStart = () => {
+    beginSession(!activeSessionHasPriorActivity);
+  };
+
+  // Confirming the question hands the session to the tutor: persist the confirmation,
+  // then auto-start so Coach Echo speaks the opening turn. The phase — not
+  // hasPriorActivity — gates this: problem-setup events bump the event count, so only
+  // currentPhase === "session_open" reliably means tutoring hasn't started yet. greet
+  // is forced true here so the pipeline fires the opening (kickoff) turn.
+  const handleConfirmPrompt = () => {
+    problemContextStep1
+      .confirmPrompt()
+      .then(() => {
+        if (!isRunning && liveSession.currentPhase === "session_open") {
+          beginSession(true);
+        }
+      })
       .catch((error: unknown) => {
         setStatus(errorMessage(error, "Unexpected error."), "error");
       });
@@ -191,7 +212,7 @@ export function App() {
               imageMeta={problemContextStep1.imageMeta}
               imagePrompt={problemContextStep1.imagePrompt}
               isBusy={problemContextStep1.isBusy}
-              onConfirmPrompt={problemContextStep1.confirmPrompt}
+              onConfirmPrompt={handleConfirmPrompt}
               onFileChange={problemContextStep1.handleFileChange}
               onPromptChange={problemContextStep1.handlePromptChange}
               onReExtract={problemContextStep1.reExtractQuestion}

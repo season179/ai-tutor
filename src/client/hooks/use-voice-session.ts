@@ -262,8 +262,14 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
         setStatus(connectedStatusMessage, "connected");
         logEvent("Voice session connected", describeVoiceSession(descriptor));
 
-        if (greetOnOpen && descriptor.provider === "openai-realtime") {
-          adapter.requestReply(descriptor.tutorPolicy.greetingInstructions);
+        if (greetOnOpen) {
+          // The tutor opens the session. Realtime nudges the live agent to greet; the
+          // turn-based pipeline sends a kickoff turn so the server speaks the first move.
+          if (descriptor.provider === "openai-realtime") {
+            adapter.requestReply(descriptor.tutorPolicy.greetingInstructions);
+          } else if (descriptor.provider === "openai-voice-pipeline") {
+            adapter.requestOpeningTurn();
+          }
         }
 
         return nextSession;

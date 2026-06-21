@@ -89,6 +89,9 @@ export type VoicePipelineAudioInput = {
 export type VoicePipelineTurnRequest = {
   audio?: VoicePipelineAudioInput | undefined;
   image?: VoicePreparedImage | null | undefined;
+  // An opening turn the tutor speaks before the student has said anything. Carries no
+  // audio/image/text — the server produces the first move from the confirmed problem.
+  kickoff?: boolean | undefined;
   sessionId: string;
   text?: string | undefined;
 };

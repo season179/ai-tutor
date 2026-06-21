@@ -155,6 +155,12 @@ test("parseVoicePipelineTurnRequest accepts an audio turn with problem image con
   assert.deepEqual(parseVoicePipelineTurnRequest(request), request);
 });
 
+test("parseVoicePipelineTurnRequest accepts a kickoff turn with no media", () => {
+  const request = { kickoff: true, sessionId: "session-123" };
+
+  assert.deepEqual(parseVoicePipelineTurnRequest(request), request);
+});
+
 test("parseVoicePipelineTurnRequest rejects an empty turn", () => {
   assert.throws(() => parseVoicePipelineTurnRequest({ sessionId: "session-123", text: "   " }), /invalid/i);
 });

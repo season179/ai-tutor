@@ -89,11 +89,14 @@ export const voicePipelineTurnRequestSchema = z
   .object({
     audio: voicePipelineAudioInputSchema.optional(),
     image: voicePreparedImageSchema.nullable().optional(),
+    kickoff: z.boolean().optional(),
     sessionId: z.string().trim().min(1),
     text: z.string().max(4_000).optional()
   })
   .refine(
-    (value) => Boolean(value.audio || value.image || value.text?.trim()),
+    // A kickoff is the tutor's opening turn and legitimately carries no media; every
+    // other turn must carry the student's audio, image, or text.
+    (value) => value.kickoff === true || Boolean(value.audio || value.image || value.text?.trim()),
     { message: "Voice turn request must include audio, image, or text." }
   ) satisfies z.ZodType<VoicePipelineTurnRequest>;
 

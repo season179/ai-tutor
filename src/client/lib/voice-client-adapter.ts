@@ -9,6 +9,7 @@ import {
 import {
   createAudioVoicePipelineTurn,
   createImageVoicePipelineTurn,
+  createKickoffVoicePipelineTurn,
   requestVoicePipelineTurn
 } from "./voice-pipeline-api.js";
 import type {
@@ -47,6 +48,7 @@ export type VoiceClientAdapter = {
   finishAudioTurn(): Promise<void>;
   getPayloadLimitBytes(): number | undefined;
   onEvent(handler: VoiceClientEventHandler): () => void;
+  requestOpeningTurn(): void;
   requestReply(instructions?: string): void;
   sendUserTurn(turn: VoiceUserTurn): void;
   startAudioTurn(): Promise<void>;
@@ -103,6 +105,7 @@ abstract class BaseVoiceClientAdapter implements VoiceClientAdapter {
   abstract disconnect(): void;
   abstract finishAudioTurn(): Promise<void>;
   abstract getPayloadLimitBytes(): number | undefined;
+  abstract requestOpeningTurn(): void;
   abstract requestReply(instructions?: string): void;
   abstract sendUserTurn(turn: VoiceUserTurn): void;
   abstract startAudioTurn(): Promise<void>;
@@ -210,6 +213,12 @@ class OpenAIVoicePipelineClientAdapter extends BaseVoiceClientAdapter {
     return typeof limit === "number" ? limit : undefined;
   }
 
+  requestOpeningTurn(): void {
+    this.createPipelineTurn({ kickoff: true }).catch((error: unknown) => {
+      this.emit({ error, type: "error" });
+    });
+  }
+
   requestReply(instructions?: string): void {
     if (!instructions) {
       return;
@@ -266,26 +275,30 @@ class OpenAIVoicePipelineClientAdapter extends BaseVoiceClientAdapter {
     audioMimeType,
     audioSize,
     image,
+    kickoff,
     text
   }: {
     audioDataUrl?: string;
     audioMimeType?: string;
     audioSize?: number;
     image?: VoiceUserTurn["image"];
+    kickoff?: boolean;
     text?: string;
   }): Promise<void> {
     const descriptor = this.requireDescriptor();
     this.emit({ type: "reply_started" });
 
     const response = await requestVoicePipelineTurn(
-      audioDataUrl && audioMimeType && audioSize
-        ? createAudioVoicePipelineTurn(descriptor.sessionId, {
-            dataUrl: audioDataUrl,
-            mimeType: audioMimeType,
-            name: "student-turn.webm",
-            size: audioSize
-          }, this.problemImage)
-        : createImageVoicePipelineTurn(descriptor.sessionId, image ?? null, text ?? "")
+      kickoff
+        ? createKickoffVoicePipelineTurn(descriptor.sessionId)
+        : audioDataUrl && audioMimeType && audioSize
+          ? createAudioVoicePipelineTurn(descriptor.sessionId, {
+              dataUrl: audioDataUrl,
+              mimeType: audioMimeType,
+              name: "student-turn.webm",
+              size: audioSize
+            }, this.problemImage)
+          : createImageVoicePipelineTurn(descriptor.sessionId, image ?? null, text ?? "")
     );
 
     if (response.transcript) {
@@ -405,6 +418,12 @@ class OpenAIRealtimeClientAdapter extends BaseVoiceClientAdapter {
     return maxMessageSize;
   }
 
+  requestOpeningTurn(): void {
+    // The realtime opening is driven by requestReply(greetingInstructions) in
+    // use-voice-session, so this provider-specific path is never taken here.
+    throw new Error("Use requestReply to open a realtime session.");
+  }
+
   requestReply(instructions?: string): void {
     const transport = this.requireTransport();
     transport.requestResponse(instructions ? { instructions } : {});
@@ -497,6 +516,10 @@ class LiveKitAgentsClientAdapter extends BaseVoiceClientAdapter {
 
   getPayloadLimitBytes(): number | undefined {
     return undefined;
+  }
+
+  requestOpeningTurn(): void {
+    throwLiveKitAgentsUnavailable();
   }
 
   requestReply(): void {
