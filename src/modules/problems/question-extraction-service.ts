@@ -31,6 +31,7 @@ If the image is not a homework or school problem, set outcome to not_a_problem.
 If no readable question is visible, set outcome to none and explain in notes.
 If text is visible but incomplete, garbled, or missing key parts, set outcome to partial.
 If a complete question is visible, set outcome to extracted.
+Set "problemType" to exactly one of: word_problem, equation, geometry, science, other (use these exact tokens — note the underscore in "word_problem").
 Set confidence to high, medium, or low based on how certain you are.
 Use notes for brief explanations when outcome is not extracted.`;
 
@@ -183,9 +184,14 @@ function parseExtractQuestionResponse(value: JsonValue): RawExtractionPayload {
     throw new Error("Extraction payload extractedText was invalid.");
   }
 
-  if (!problemTypes.includes(problemType as ProblemType)) {
-    throw new Error("Extraction payload problemType was invalid.");
-  }
+  // problemType is supplementary metadata — the load-bearing field is `question` — and Worker B
+  // now enforces this enum with a picklist. As defense in depth against contract drift (and so a
+  // provider that doesn't honor the structured-output enum can't sink the whole upload), an
+  // unrecognized value degrades to "other" — the established default (see defaultProblemFrame) —
+  // rather than throwing the way a missing load-bearing field does.
+  const normalizedProblemType: ProblemType = problemTypes.includes(problemType as ProblemType)
+    ? (problemType as ProblemType)
+    : "other";
 
   if (!Array.isArray(likelySkillKeys) || !likelySkillKeys.every((item) => typeof item === "string")) {
     throw new Error("Extraction payload likelySkillKeys was invalid.");
@@ -243,7 +249,7 @@ function parseExtractQuestionResponse(value: JsonValue): RawExtractionPayload {
     likelySkillKeys,
     notes,
     outcome,
-    problemType: problemType as ProblemType,
+    problemType: normalizedProblemType,
     quantities: parsedQuantities,
     question: question.trim(),
     relationships,

@@ -81,6 +81,24 @@ test("extractQuestionFromImageUrl routes through the binding with the flag on an
   assert.equal(response.requiresConfirmation, true);
 });
 
+test("extractQuestionFromImageUrl degrades an out-of-enum problemType to \"other\" instead of failing", async () => {
+  // Regression: Worker B's schema once typed problemType as a bare string, so the model could
+  // return "word problem" (space) where Worker A's enum requires "word_problem" (underscore) —
+  // failing the whole extraction with "did not match the extraction shape". problemType is
+  // supplementary, so an unrecognized value must degrade to "other", not sink the upload.
+  const calls: FetchCall[] = [];
+  const binding = makeBindingFake({ ...fullExtractionPayload, problemType: "word problem" }, calls);
+  const env = {
+    OPENAI_VISION_MODEL: "gpt-5.5",
+    REASONING: binding
+  };
+
+  const response = await extractQuestionFromImageUrl(imageUrl, env);
+
+  assert.equal(response.outcome, "extracted");
+  assert.equal(response.frame.problemType, "other");
+});
+
 test("extractQuestionFromImageUrl maps a binding failure to HttpError(502)", async () => {
   // Extraction is NOT fail-soft (it runs at session creation, outside the turn loop): a
   // binding failure must surface, not degrade.

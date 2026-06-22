@@ -19,15 +19,19 @@ const extractor = createAgent(() => ({
 }));
 
 // The shared structured-output contract. Mirrors the OpenAI extractedQuestionJsonSchema so
-// Worker A's parseExtractQuestionResponse sees the same shape. Enum membership for
-// outcome/problemType/confidence is re-validated in Worker A.
+// Worker A's parseExtractQuestionResponse sees the same shape. The enum fields
+// (outcome/confidence/problemType) are picklists so structured output emits the exact tokens
+// Worker A's parser expects — problemType in particular MUST stay in lockstep with Worker A's
+// `problemTypes`; a bare v.string() let the model return "word problem" (space) where the
+// parser requires "word_problem" (underscore), failing the whole extraction. Worker A still
+// re-validates these enums as defense in depth.
 export const extractQuestionResult = v.object({
   question: v.string(),
   confidence: v.picklist(["high", "medium", "low"]),
   notes: v.union([v.string(), v.null()]),
   outcome: v.picklist(["extracted", "multiple_questions", "none", "not_a_problem", "partial"]),
   extractedText: v.string(),
-  problemType: v.string(),
+  problemType: v.picklist(["word_problem", "equation", "geometry", "science", "other"]),
   likelySkillKeys: v.array(v.string()),
   quantities: v.array(
     v.object({
