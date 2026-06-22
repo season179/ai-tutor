@@ -84,7 +84,9 @@ against that lighter alternative. The cost is accepted for the harness future.
 ## Open / future
 
 - STT/TTS remain direct OpenAI calls in Worker A (Flue is LLM-only); swapping audio
-  providers is a separate, non-Flue effort.
+  providers is a separate, non-Flue effort. **(Resolved: STT/TTS were swapped to OpenRouter
+  in `feat/openrouter-audio-swap`; Worker A now holds `OPENROUTER_API_KEY`, not an OpenAI
+  key, and the OpenRouter audio wire lives in `src/providers/openrouter/openrouter-audio.ts`.)**
 - Durable Flue workflow resumption, streaming + structured-output tension, and
   tool-using tutor are future Flue capabilities this choice unlocks but this migration
   does not deliver.

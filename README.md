@@ -6,7 +6,7 @@ Small TypeScript voice homework coach for turn-controlled tutoring. A student sh
 
 - Node.js 24
 - pnpm 11
-- An OpenAI API key
+- An OpenRouter API key
 - Google OAuth credentials (for sign-in)
 
 This repo pins `pnpm@11.6.0` in `package.json` and includes `.node-version` / `.nvmrc` with Node 24. Local dev runs behind [Portless](https://portless.sh), which gives the app a stable `https://ai-tutor.dev` URL.
@@ -20,7 +20,7 @@ pnpm install
 cp .dev.vars.example .dev.vars
 ```
 
-Set `OPENAI_API_KEY` and the better-auth / Google OAuth values in `.dev.vars` (see [Authentication](#authentication)). Then do the one-time Portless setup:
+Set `OPENROUTER_API_KEY` and the better-auth / Google OAuth values in `.dev.vars` (see [Authentication](#authentication)). Then do the one-time Portless setup:
 
 ```bash
 pnpm portless proxy start --tld dev   # set + persist the .dev TLD
@@ -42,7 +42,7 @@ Authorized redirect URI: `https://<your-domain>/api/auth/callback/google` — us
 For production, set the secrets with:
 
 ```bash
-pnpm wrangler secret put OPENAI_API_KEY
+pnpm wrangler secret put OPENROUTER_API_KEY
 pnpm wrangler secret put BETTER_AUTH_SECRET
 pnpm wrangler secret put GOOGLE_CLIENT_ID
 pnpm wrangler secret put GOOGLE_CLIENT_SECRET
@@ -66,7 +66,7 @@ pnpm db:migrate
 
 - The server keeps provider secrets private and creates a normalized voice session descriptor at `POST /api/voice/session`.
 - The `openai-voice-pipeline` backend accepts one turn at a time at `POST /api/voice/turn`.
-- Student audio is transcribed with `gpt-4o-transcribe`, the lesson controller uses `gpt-5.5` with strict structured output, and the spoken reply is generated with `gpt-4o-mini-tts` using the `marin` voice by default.
+- Student audio is transcribed with `qwen/qwen3-asr-flash` (via OpenRouter), the reasoning stages run on the Flue reasoning worker over the `REASONING` binding, and the spoken reply is synthesized with `google/gemini-3.1-flash-tts` using the `Aoede` voice by default.
 - The lesson controller is constrained to one small question, hint, or confirmation per turn and returns only the structured tutor action that should be spoken aloud.
 - The browser uses a provider-neutral `VoiceClientAdapter`; the pipeline adapter records one answer clip at a time and plays the returned tutor audio.
 - Image files are decoded in the browser, resized to a 2048px maximum side, flattened onto a white background, encoded as bounded JPEG data URLs, and sent through a provider-neutral user-turn shape.
@@ -78,7 +78,7 @@ The production deployment uses a Worker-native entrypoint in `src/worker.ts`; `@
 For deployment:
 
 ```bash
-pnpm wrangler secret put OPENAI_API_KEY
+pnpm wrangler secret put OPENROUTER_API_KEY
 pnpm wrangler secret put BETTER_AUTH_SECRET
 pnpm wrangler secret put GOOGLE_CLIENT_ID
 pnpm wrangler secret put GOOGLE_CLIENT_SECRET
