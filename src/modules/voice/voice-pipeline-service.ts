@@ -75,10 +75,11 @@ export const defaultTtsVoice = "Aoede";
 const maxTutorAttempts = 2;
 
 export type VoicePipelineServiceEnv = ReasoningEnv & {
-  // STT/TTS moved to OpenRouter; OPENROUTER_API_KEY is now the only audio-provider key
-  // Worker A holds (reasoning crosses the binding, and STT/TTS are the last direct
-  // provider calls in Worker A). The reasoning-stage model vars below are vestigial —
-  // reasoning lives in Worker B — but retained for back-compat with callers that read them.
+  // STT/TTS moved to OpenRouter; OPENROUTER_API_KEY is the only audio-provider key Worker A
+  // holds (reasoning crosses the binding). OPENAI_TUTOR_MODEL is still read below for the
+  // session descriptor's `model` field (see createVoicePipelineOptions) — it is NOT used for
+  // any LLM call in Worker A. The other OPENAI_*_MODEL vars are vestigial (reasoning lives in
+  // Worker B) but retained for back-compat with callers that read them.
   OPENROUTER_API_KEY: string | undefined;
   OPENROUTER_TRANSCRIBE_MODEL: string | undefined;
   OPENROUTER_TTS_MODEL: string | undefined;

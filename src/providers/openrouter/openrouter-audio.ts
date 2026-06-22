@@ -3,10 +3,10 @@ import { readLimitedTextBody } from "../../core/read-limited-text.js";
 import { isJsonObject } from "../../core/schema-parser.js";
 import type { VoicePipelineAudioInput, VoicePipelineAudioOutput } from "../../modules/voice/voice-types.js";
 
-// Mirrors src/providers/openai/openai-responses.ts: a ceiling on a single audio
-// (JSON) response body, and a separate timeout for the upstream model call. Audio
-// bytes for TTS are read in full via arrayBuffer(); these caps apply only to the
-// JSON bodies (STT success + error bodies on either endpoint).
+// Same shape as the former OpenAI provider's caps: a ceiling on a single audio (JSON)
+// response body, and a separate timeout for the upstream model call. Audio bytes for TTS
+// are read in full via arrayBuffer(); these caps apply only to the JSON bodies (STT success
+// + error bodies on either endpoint).
 const maxOpenRouterJsonResponseBytes = 256_000;
 const maxOpenRouterErrorBytes = 8_192;
 export const openRouterRequestTimeoutMs = 30_000;
