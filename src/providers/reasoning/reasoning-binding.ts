@@ -61,16 +61,23 @@ export async function runReasoningWorkflow(
 ): Promise<JsonValue> {
   const binding = env.REASONING;
   if (!binding) {
-    throw new HttpError(502, "Reasoning service binding is not available.", {
-      stage,
-      reason: "REASONING binding absent"
-    });
+    throw new HttpError(
+      502,
+      `Reasoning workflow "${stage}" has no transport: the REASONING service binding to Worker B (ai-tutor-reasoning) is not configured. In local dev, run both workers with \`pnpm dev\` (or start Worker B alone with \`pnpm dev:reasoning\`).`,
+      { stage, reason: "REASONING binding absent" }
+    );
   }
 
   let response: Response;
   try {
+    // The host is cosmetic — a service binding routes by binding name, not host — but in
+    // local dev the request crosses into Worker B's `flue dev` Vite server, which runs
+    // Vite's `server.allowedHosts` (DNS-rebinding) check on the Host header. Vite allows
+    // `localhost`, any `*.localhost`, and IP literals by default and Flue exposes no knob
+    // to widen that list, so the host MUST stay under `.localhost` or Vite answers 403
+    // "Blocked request. This host is not allowed."
     response = await binding.fetch(
-      `https://reasoning.local/workflows/${encodeURIComponent(stage)}?wait=result`,
+      `https://reasoning.localhost/workflows/${encodeURIComponent(stage)}?wait=result`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,35 +89,56 @@ export async function runReasoningWorkflow(
     );
   } catch (error) {
     // A binding fetch that throws (network/timeout in the binding transport) maps to the
-    // same HttpError(502) gate/tutor throw on a direct OpenAI failure.
-    throw new HttpError(502, `Reasoning workflow "${stage}" call failed.`, {
-      stage,
-      error: error instanceof Error ? error.message : String(error)
-    });
+    // same HttpError(502) gate/tutor throw on a direct OpenAI failure. The detail payload
+    // is dropped before the client (the server-fn re-throw keeps only `.message`), so the
+    // root cause has to live in the message string itself.
+    const cause = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : "";
+    if (name === "TimeoutError" || /tim(?:e|ed) out|abort/i.test(`${cause} ${name}`)) {
+      throw new HttpError(
+        502,
+        `Reasoning workflow "${stage}" timed out after ${reasoningWorkflowTimeoutMs / 1000}s waiting on the reasoning service (Worker B, ai-tutor-reasoning). The model call may be hung or overloaded.`,
+        { stage, error: cause, timeoutMs: reasoningWorkflowTimeoutMs }
+      );
+    }
+    throw new HttpError(
+      502,
+      `Reasoning workflow "${stage}" could not reach the reasoning service (Worker B, ai-tutor-reasoning) — ensure it is running and bound (in local dev: \`pnpm dev\` / \`pnpm dev:reasoning\`): ${cause}`,
+      { stage, error: cause }
+    );
   }
 
   if (!response.ok) {
+    const detail = await readWorkflowError(response);
     throw new HttpError(
       502,
-      `Reasoning workflow "${stage}" returned an error.`,
-      await readWorkflowError(response)
+      `Reasoning workflow "${stage}" failed — ${summarizeWorkflowError(response.status, detail)}`,
+      detail
     );
   }
 
   const text = await readWorkflowResultText(response);
   if (!text) {
-    throw new HttpError(502, `Reasoning workflow "${stage}" returned no body.`, { stage });
+    throw new HttpError(
+      502,
+      `Reasoning workflow "${stage}" returned a 2xx but an empty body from the reasoning service (Worker B). Expected the Flue \`{ result, … }\` envelope.`,
+      { stage }
+    );
   }
 
   let parsed: JsonValue;
   try {
     parsed = JSON.parse(text) as JsonValue;
   } catch (error) {
-    throw new HttpError(502, `Reasoning workflow "${stage}" returned invalid JSON.`, {
-      stage,
-      body: text.slice(0, 500),
-      error: error instanceof Error ? error.message : String(error)
-    });
+    throw new HttpError(
+      502,
+      `Reasoning workflow "${stage}" returned a non-JSON body from the reasoning service (Worker B): ${text.slice(0, 200)}`,
+      {
+        stage,
+        body: text.slice(0, 500),
+        error: error instanceof Error ? error.message : String(error)
+      }
+    );
   }
 
   // Flue's `?wait=result` wraps the workflow's return value in an envelope — Worker B
@@ -139,18 +167,64 @@ function readWorkflowResultText(response: Response): Promise<string | null> {
   );
 }
 
+// Always carries Worker B's HTTP status + statusText alongside its body, so the detail
+// payload is self-describing even when the body itself is valid JSON (the old version
+// dropped the status in that case).
 async function readWorkflowError(response: Response): Promise<JsonValue> {
+  const base = { status: response.status, statusText: response.statusText };
   const text = await readLimitedTextBody(
     response.body,
     maxWorkflowErrorBytes,
     () => new HttpError(502, "Reasoning workflow error body was too large.")
   );
   if (!text) {
-    return { status: response.status, statusText: response.statusText };
+    return base;
   }
   try {
-    return JSON.parse(text) as JsonValue;
+    return { ...base, body: JSON.parse(text) as JsonValue };
   } catch {
-    return { status: response.status, body: text };
+    return { ...base, body: text };
   }
+}
+
+/**
+ * Builds the human reason embedded in the `!response.ok` message. The detail payload
+ * carries Worker B's status + body, but only the *message* survives to the client log/UI
+ * (the server-fn re-throw drops the HttpError payload — see error-status-middleware.ts
+ * and problem-context-api.ts), so the root cause has to be in the string. Names the
+ * unreachable case (502/503 = the binding has no live Worker B behind it, almost always
+ * Worker B not running in local dev) and surfaces any error text from B's body.
+ */
+function summarizeWorkflowError(status: number, detail: JsonValue): string {
+  const reason = workflowErrorBodyMessage(detail);
+  const tail = reason ? `: ${reason}` : "";
+  if (status === 502 || status === 503) {
+    return `the reasoning service (Worker B, ai-tutor-reasoning) is unreachable — ensure it is running and bound (in local dev: \`pnpm dev\` / \`pnpm dev:reasoning\`) [HTTP ${status}]${tail}`;
+  }
+  return `the reasoning service (Worker B) returned HTTP ${status}${tail}`;
+}
+
+/** Best-effort extraction of a human message from Worker B's error body. */
+function workflowErrorBodyMessage(detail: JsonValue): string | undefined {
+  if (!isJsonObject(detail)) {
+    return undefined;
+  }
+  const body = detail.body;
+  let text: string | undefined;
+  if (typeof body === "string") {
+    text = body;
+  } else if (isJsonObject(body)) {
+    if (typeof body.error === "string") {
+      text = body.error;
+    } else if (isJsonObject(body.error) && typeof body.error.message === "string") {
+      text = body.error.message;
+    } else if (typeof body.message === "string") {
+      text = body.message;
+    }
+  }
+  if (!text) {
+    return undefined;
+  }
+  const trimmed = text.trim();
+  return trimmed.length > 300 ? `${trimmed.slice(0, 300)}…` : trimmed;
 }

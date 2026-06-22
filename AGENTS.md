@@ -18,17 +18,20 @@ removed in Phase 4 (only STT/TTS still call OpenAI directly in Worker A; Flue is
   (a `provider/model` string, so swapping providers is a one-var + secret change).
 
 ### Two-worker local dev
-Worker A's `pnpm dev` does NOT auto-resolve `env.REASONING` to Worker B — a DO call
-(`SessionRuntimeDO.processTurn`, where per-turn reasoning runs) to an unbound service fails
-opaquely. Run both workers: every reasoning stage needs Worker B up.
+Every reasoning stage needs Worker B up: if `env.REASONING` has no local target, the binding
+fetch returns non-2xx and `runReasoningWorkflow` throws `Reasoning workflow "<stage>" returned
+an error.` (with the binding-resolution hint in the HttpError detail). `pnpm dev` now starts
+BOTH workers via `concurrently` — Worker A (`dev:app`, portless→vite) and Worker B
+(`dev:reasoning`, `flue dev`) — so the service binding resolves through wrangler's dev registry.
 
 ```bash
-# Terminal 1 — Worker B (Flue dev server):
-cd reasoning-worker && npm install && npx flue dev --target cloudflare
-# Terminal 2 — Worker A (the app):
-pnpm dev
-# Point REASONING at the local Worker B per wrangler's multi-worker dev guidance.
+pnpm dev            # starts both: app (blue) + reasoning (magenta)
+# one-time per machine:
+cd reasoning-worker && npm install        # Worker B deps
+# Worker B reads reasoning-worker/.dev.vars (OPENAI_API_KEY); copy from .dev.vars.example.
 ```
+
+Run a worker alone with `pnpm dev:app` / `pnpm dev:reasoning` when you only need one.
 
 ### Dual deploy
 Build + deploy each worker separately. Worker B builds with Flue and deploys from its
