@@ -11,12 +11,12 @@
     "deploy:dry-run": "flue build --target cloudflare && wrangler deploy --config dist/ai_tutor_reasoning/wrangler.json --dry-run"
   },
   "dependencies": {
-    "@flue/runtime": "^1.0.0-beta.1",
-    "agents": "^0.1.0",
-    "valibot": "^1.0.0"
+    "@flue/runtime": "1.0.0-beta.2",
+    "agents": "0.16.2",
+    "valibot": "1.4.1"
   },
   "devDependencies": {
-    "@flue/cli": "^1.0.0-beta.1",
-    "wrangler": "^4.102.0"
+    "@flue/cli": "1.0.0-beta.1",
+    "wrangler": "4.103.0"
   }
 }
