@@ -19,11 +19,15 @@ const frame = {
   visibleQuestion: "How many stickers does each friend get?"
 };
 
-// checkGateStage reaches the model through the REASONING binding; each test installs a fake
-// carrying the gateChecker slot. The env reads the binding off the installed fake.
+// checkGateStage reaches the model through the in-app reasoning transport; each test
+// installs a fake carrying the gateChecker slot.
 let fake: VoiceProviderFake | null = null;
 function env() {
-  return { REASONING: fake?.reasoning };
+  return {
+    OPENAI_API_KEY: "test-openai-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    REASONING_TEST_TRANSPORT: fake?.reasoningTransport
+  };
 }
 afterEach(() => {
   fake?.restore();
@@ -62,6 +66,31 @@ test("checkGateStage short-circuits empty student text without calling the model
   const verdict = await checkGateStage("context", frame, "   ", env());
 
   assert.equal(verdict.accepted, false);
+  assert.equal(fake.calls.counts.gateChecker, 0);
+});
+
+test("checkGateStage accepts a clear quantity read without calling the model", async () => {
+  fake = installVoiceProviders({ gateChecker: { accepted: false, notes: "should not run" } });
+
+  const verdict = await checkGateStage(
+    "quantity",
+    frame,
+    "The important numbers are 24 stickers and 4 friends.",
+    env()
+  );
+
+  assert.equal(verdict.accepted, true);
+  assert.match(verdict.notes ?? "", /Deterministic accept/);
+  assert.equal(fake.calls.counts.gateChecker, 0);
+});
+
+test("checkGateStage rejects answer requests without calling the model", async () => {
+  fake = installVoiceProviders({ gateChecker: { accepted: true, notes: "should not run" } });
+
+  const verdict = await checkGateStage("target", frame, "Just tell me the answer.", env());
+
+  assert.equal(verdict.accepted, false);
+  assert.match(verdict.notes ?? "", /Deterministic reject/);
   assert.equal(fake.calls.counts.gateChecker, 0);
 });
 

@@ -45,6 +45,35 @@ test("accepts a restate prompt during the gate", () => {
   assert.deepEqual(result, { ok: true });
 });
 
+test("rejects a phase advance while the comprehension gate is still locked", () => {
+  const result = validateTutorAction(
+    action({
+      phase: "frame_task",
+      move: "restate_prompt",
+      spokenUtterance: "In your own words, what are we trying to find?",
+      statePatch: { nextPhase: "plan_first_step" }
+    }),
+    { gateStatus: "needs_restatement", phase: "frame_task" }
+  );
+
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.reasons.some((reason) => reason.includes("nextPhase")));
+});
+
+test("accepts a legal phase advance after the comprehension gate completes", () => {
+  const result = validateTutorAction(
+    action({
+      phase: "frame_task",
+      move: "restate_prompt",
+      spokenUtterance: "Great restatement — what's our first tiny step?",
+      statePatch: { nextPhase: "plan_first_step" }
+    }),
+    { gateStatus: "complete", phase: "frame_task" }
+  );
+
+  assert.deepEqual(result, { ok: true });
+});
+
 test("rejects an utterance over the 32-word cap", () => {
   const longUtterance = `${Array.from({ length: 40 }, () => "word").join(" ")}?`;
   const result = validateTutorAction(action({ spokenUtterance: longUtterance }), { phase: "step_loop" });

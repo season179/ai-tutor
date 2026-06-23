@@ -1,17 +1,16 @@
 /**
- * Audio wire + reasoning-binding conformance — Tier 2.
+ * Audio wire + reasoning payload conformance — Tier 2.
  *
  * Deliberately provider/transport-specific. Two concerns:
  *  (a) The shared `extractOutputText` parser (`src/providers/openai/openai-responses.ts`),
  *      which the tutor path still uses to unwrap the synthetic `{ output_text }` envelope the
- *      binding helper returns.
+ *      reasoning helper returns.
  *  (b) Wire shapes that still live in Worker A: STT/TTS now cross OpenRouter's audio endpoints
  *      (`/audio/transcriptions` JSON with `input_audio: { data, format }`, `/audio/speech` JSON
- *      returning binary), and the tutor prompt content / image attachment cross the REASONING
- *      binding.
+ *      returning binary), and the tutor prompt content / image attachment cross the in-app
+ *      reasoning payload.
  *
- * The reasoning stages themselves never touch a provider wire (they cross the binding); the
- * integration tests below assert the prompt content + image ride the workflow payload.
+ * The integration tests below assert the prompt content + image ride the reasoning payload.
  */
 
 import assert from "node:assert/strict";
@@ -61,9 +60,9 @@ test("extractOutputText returns empty string when no text is present anywhere", 
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Request encoding: STT/TTS over OpenRouter (fetch transport) + tutor prompt/image (binding)
+// Request encoding: STT/TTS over OpenRouter (fetch transport) + tutor prompt/image
 //
-// The reasoning stages cross the REASONING binding; STT/TTS cross globalThis.fetch to
+// The reasoning stages use the in-app reasoning transport; STT/TTS cross globalThis.fetch to
 // OpenRouter's audio endpoints. These install the harness fake so both transports are
 // exercised in one turn.
 // ──────────────────────────────────────────────────────────────────────────────
@@ -75,9 +74,10 @@ afterEach(() => {
 });
 
 test("transcription is sent to OpenRouter as JSON with bare-base64 input_audio", async () => {
-  // STT + TTS stay on globalThis.fetch (OpenRouter); the reasoning stages cross the binding.
+  // STT + TTS stay on globalThis.fetch (OpenRouter); reasoning uses a separate fake
+  // transport.
   // To assert the raw OpenRouter STT JSON shape (which the domain harness hides), this test
-  // sets its OWN globalThis.fetch for STT/TTS and builds the reasoning binding fake WITHOUT
+  // sets its OWN globalThis.fetch for STT/TTS and builds the reasoning fake WITHOUT
   // installing it as globalThis.fetch (so the two don't fight over globalThis.fetch).
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Audio encoding" });
@@ -111,13 +111,13 @@ test("transcription is sent to OpenRouter as JSON with bare-base64 input_audio",
     throw new Error(`Unexpected fetch: ${url}`);
   }) as typeof fetch;
 
-  // Build (do NOT install) the provider fake so its `reasoning` Fetcher serves gate/tutor
-  // over the binding while globalThis.fetch stays this test's STT/TTS double.
+  // Build (do NOT install) the provider fake so its reasoning transport serves gate/tutor
+  // while globalThis.fetch stays this test's STT/TTS double.
   const providerFake = makeOpenAiProviderFake({
     gateChecker: { accepted: true, notes: null },
     tutor: { move: "three_reads_1", nextPhase: "frame_task", spokenUtterance: "Read it once." }
   });
-  const env = { ...voiceServiceEnv, REASONING: providerFake.reasoning };
+  const env = { ...voiceServiceEnv, REASONING_TEST_TRANSPORT: providerFake.reasoningTransport };
 
   try {
     await handleVoicePipelineTurnWithStore(
@@ -146,7 +146,7 @@ test("transcription is sent to OpenRouter as JSON with bare-base64 input_audio",
   }
 });
 
-test("the tutor prompt over the binding carries the student utterance", async () => {
+test("the tutor prompt over reasoning carries the student utterance", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Tutor encoding" });
   await store.saveProblemContext(ownerKey, {
@@ -181,28 +181,24 @@ test("the tutor prompt over the binding carries the student utterance", async ()
   assert.ok(tutorInput.includes(utterance), "the student utterance must travel in the workflow input");
 });
 
-test("an image turn embeds the image (as PromptImage fields) in the tutor binding payload", async () => {
+test("an image turn embeds the image fields in the tutor reasoning payload", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Image encoding" });
 
-  // Capture the raw workflow payload to inspect the image field directly (the harness hides
+  // Capture the raw reasoning payload to inspect the image field directly (the harness hides
   // wire shape; this Tier-2 test looks at it on purpose).
   let capturedImage: { type?: string; data?: string; mimeType?: string } | null = null;
-  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/workflows/tutor-turn")) {
-      const body = JSON.parse(String(init?.body)) as { image?: typeof capturedImage };
-      capturedImage = body.image ?? null;
-      return Response.json({ move: "rapport_check", nextPhase: "frame_task", spokenUtterance: "Let's look." });
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  }) as Fetcher["fetch"];
 
   fake = installVoiceProviders({ tts: new Uint8Array([1]) });
-  // Override the tutor binding to capture the image; reuse the installed fake's fetch for the
-  // other stages by routing through one Fetcher.
-  const imageCaptureBinding = { fetch: fetchImpl } as Fetcher;
-  const env = { ...voiceServiceEnv, REASONING: imageCaptureBinding };
+  const env = {
+    ...voiceServiceEnv,
+    REASONING_TEST_TRANSPORT: {
+      async runReasoningWorkflow(payload: { image?: typeof capturedImage }) {
+        capturedImage = payload.image ?? null;
+        return { move: "rapport_check", nextPhase: "frame_task", spokenUtterance: "Let's look." };
+      }
+    }
+  };
 
   await handleVoicePipelineTurnWithStore(
     { image: problemImage, sessionId: session.id, text: "Help me understand this problem." },
@@ -211,7 +207,7 @@ test("an image turn embeds the image (as PromptImage fields) in the tutor bindin
     context
   );
 
-  assert.ok(capturedImage, "the tutor workflow payload must carry the image");
+  assert.ok(capturedImage, "the tutor reasoning payload must carry the image");
   assert.equal(capturedImage!.type, "image");
   assert.equal(capturedImage!.mimeType, "image/jpeg");
   // The data is the base64 portion of the data URL (the prefix is stripped).

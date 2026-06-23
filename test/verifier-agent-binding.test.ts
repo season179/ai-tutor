@@ -1,8 +1,8 @@
 /**
- * Verifier stage over the REASONING service binding — the fail-soft half of the asymmetry.
+ * Verifier reasoning failure — the fail-soft half of the asymmetry.
  *
- * The binding is the sole reasoning transport now, so the main verifier tests already
- * exercise it. This file keeps the ONE load-bearing assertion: a transient Worker B failure
+ * The main verifier tests already exercise the reasoning transport. This file keeps the ONE
+ * load-bearing assertion: a transient reasoning failure
  * is SURVIVED by the verifier — it degrades to `unknown` (the ONLY fail-soft stage), the
  * deliberate counterpart to the gate, where the same failure kills the turn at 502 (see
  * gate-checker-binding.test.ts). Both halves are the Phase 3 DoD contract.
@@ -21,8 +21,8 @@ afterEach(() => {
   fake = null;
 });
 
-test("a REASONING binding failure is SURVIVED by the verifier — fails soft to unknown (the asymmetry)", async () => {
-  // THE ASYMMETRY (plan §3 / Phase 3 DoD): a transient Worker B failure must degrade the
+test("a reasoning failure is SURVIVED by the verifier — fails soft to unknown (the asymmetry)", async () => {
+  // THE ASYMMETRY: a transient reasoning failure must degrade the
   // verifier to `unknown` (never kill the turn), because the verifier is the ONLY fail-soft
   // stage. This is the deliberate counterpart to the gate, where the same 5xx kills the turn.
   const store = new MemorySessionStore();

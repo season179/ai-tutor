@@ -13,7 +13,14 @@ import type {
 } from "./session-types.js";
 import { parseActiveStep, serializeActiveStep, type ActiveStep } from "../tutoring/active-step.js";
 import type { ExtractionOutcome } from "../problems/problem-context-types.js";
-import { problemTypes, type ProblemContextRecord, type ProblemFrame, type ProblemQuantity, type ProblemType } from "../problems/problem-frame.js";
+import {
+  problemTypes,
+  withInferredProblemFrameQuantities,
+  type ProblemContextRecord,
+  type ProblemFrame,
+  type ProblemQuantity,
+  type ProblemType
+} from "../problems/problem-frame.js";
 import { isJsonObject } from "../../core/schema-parser.js";
 import type { JsonValue } from "../../core/http-error.js";
 import { applyTutorSessionUpdate, maxSessionEvents, toTutorSessionSummary } from "./session-types.js";
@@ -160,8 +167,9 @@ function createProblemContextRecord(
   createdAt: string,
   id: string
 ): ProblemContextRecord {
+  const frame = withInferredProblemFrameQuantities(request.frame);
   return {
-    ...request.frame,
+    ...frame,
     confirmedQuestion: request.confirmedQuestion ?? null,
     createdAt,
     extractionConfidence: request.extractionConfidence,
@@ -198,29 +206,32 @@ export function serializeProblemContext(record: ProblemContextRecord): Record<st
 export function mapD1ProblemContextRow(row: Record<string, unknown>): ProblemContextRecord {
   const extractedText = String(row.extracted_text ?? "");
   const confirmedQuestion = rowStringOrNull(row.confirmed_question);
-
-  return {
-    confirmedQuestion,
-    createdAt: String(row.created_at),
+  const frame = withInferredProblemFrameQuantities({
     diagramDescription: rowStringOrNull(row.diagram_description),
     extractedText,
+    languageIsSubject: Number(row.language_is_subject ?? 0) === 1,
+    likelySkillKeys: parseStringArray(rowStringOrNull(row.skill_keys_json)),
+    problemType: parseProblemType(rowStringOrNull(row.problem_type)),
+    quantities: parseProblemQuantities(rowStringOrNull(row.quantities_json)),
+    relationships: parseStringArray(rowStringOrNull(row.relationships_json)),
+    taskLanguage: rowStringOrNull(row.task_language) ?? "en",
+    unknownTarget: rowStringOrNull(row.unknown_target),
+    visibleQuestion: confirmedQuestion ?? extractedText
+  });
+
+  return {
+    ...frame,
+    confirmedQuestion,
+    createdAt: String(row.created_at),
     extractionConfidence:
       row.extraction_confidence === "high" || row.extraction_confidence === "medium" || row.extraction_confidence === "low"
         ? row.extraction_confidence
         : null,
     extractionOutcome: parseExtractionOutcome(String(row.extraction_outcome)) ?? "none",
     id: String(row.id),
-    languageIsSubject: Number(row.language_is_subject ?? 0) === 1,
-    likelySkillKeys: parseStringArray(rowStringOrNull(row.skill_keys_json)),
-    problemType: parseProblemType(rowStringOrNull(row.problem_type)),
-    quantities: parseProblemQuantities(rowStringOrNull(row.quantities_json)),
     r2ObjectKey: rowStringOrNull(row.r2_object_key),
-    relationships: parseStringArray(rowStringOrNull(row.relationships_json)),
     sessionId: String(row.session_id),
-    taskLanguage: rowStringOrNull(row.task_language) ?? "en",
-    unknownTarget: rowStringOrNull(row.unknown_target),
-    updatedAt: String(row.updated_at),
-    visibleQuestion: confirmedQuestion ?? extractedText
+    updatedAt: String(row.updated_at)
   };
 }
 

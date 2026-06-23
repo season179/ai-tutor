@@ -2,11 +2,15 @@ import { useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ProviderSettings, ProviderSettingsPatch } from "../../modules/settings/settings-types.js";
+import type {
+  ProviderSettings,
+  ProviderSettingsPatch
+} from "../../modules/settings/settings-types.js";
 import { errorMessage } from "../lib/error-message.js";
-import { getSettings, saveSettings } from "../lib/settings-api.js";
+import { getSettings, getSettingsModelOptions, saveSettings } from "../lib/settings-api.js";
 
 const SETTINGS_QUERY_KEY = ["settings"] as const;
+const SETTINGS_MODEL_OPTIONS_QUERY_KEY = ["settings-model-options"] as const;
 
 export type SettingsSaveState =
   | { kind: "idle" }
@@ -26,6 +30,12 @@ export function useSettings() {
   const settingsQuery = useQuery({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: getSettings
+  });
+
+  const modelOptionsQuery = useQuery({
+    queryKey: SETTINGS_MODEL_OPTIONS_QUERY_KEY,
+    queryFn: getSettingsModelOptions,
+    enabled: settingsQuery.isSuccess
   });
 
   const { mutateAsync: saveSettingsAsync, isPending: isSaving } = useMutation({
@@ -48,8 +58,11 @@ export function useSettings() {
 
   return {
     settings: settingsQuery.data,
+    modelOptions: modelOptionsQuery.data,
     isLoading: settingsQuery.isPending,
+    isModelOptionsLoading: modelOptionsQuery.isPending && settingsQuery.isSuccess,
     loadError: settingsQuery.error,
+    modelOptionsError: modelOptionsQuery.error,
     isSaving,
     saveState,
     save

@@ -264,6 +264,14 @@ test("emits safe timing logs for the voice turn stages", async () => {
     .map((entry) => entry.workflow)
     .sort();
   assert.deepEqual(workflows, ["tutor-turn", "verifier"]);
+  const tutorWorkflow = logs.find(
+    (entry) => entry.stage === "reasoning.workflow" && entry.workflow === "tutor-turn"
+  );
+  assert.equal(typeof tutorWorkflow?.inputCharCount, "number");
+  assert.equal(typeof tutorWorkflow?.promptCharCount, "number");
+  assert.equal(typeof tutorWorkflow?.recentHistoryCount, "number");
+  const tutorResult = logs.find((entry) => entry.stage === "voice.tutor_action_result");
+  assert.equal(typeof tutorResult?.spokenUtteranceCharCount, "number");
   assert.ok(logs.every((entry) => typeof entry.durationMs === "number"));
 
   const serializedLogs = JSON.stringify(logs);
@@ -351,6 +359,35 @@ test("re-asks the generator when the first move is illegal, then accepts a legal
   assert.equal(detail?.session.currentPhase, "frame_task");
 });
 
+test("re-asks the generator when it invents a nextPhase, then accepts a legal one", async () => {
+  const store = new MemorySessionStore();
+  const session = await store.createSession(ownerKey, { title: "Next phase retry test" });
+  await seedGateSession(store, session.id);
+
+  const restate = {
+    move: "restate_prompt",
+    nextPhase: "frame_task",
+    spokenUtterance: "In your own words, what are we trying to find?"
+  };
+
+  fake = installVoiceProviders({
+    gateChecker: { accepted: false, notes: "Keep going." },
+    tutor: [{ kind: "throws", action: { ...restate, nextPhase: "solve_problem" } }, restate],
+    tts: new Uint8Array([1])
+  });
+
+  const response = await handleVoicePipelineTurnWithStore(
+    { image: problemImage, sessionId: session.id, text: "I think we share them out." },
+    voiceServiceEnv,
+    store,
+    context
+  );
+
+  assert.equal(fake.calls.counts.tutor, 2);
+  assert.equal(response.tutorText, restate.spokenUtterance);
+  assert.match(fake.calls.tutorBodies()[1] ?? "", /Invalid nextPhase "solve_problem"/);
+});
+
 test("does not advance past the gate until the gate-checker accepts a restatement", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Gate advance test" });
@@ -358,7 +395,7 @@ test("does not advance past the gate until the gate-checker accepts a restatemen
 
   const plan = {
     move: "restate_prompt",
-    nextPhase: "plan_first_step",
+    nextPhase: "frame_task",
     spokenUtterance: "Nice — ready for the first tiny step?"
   };
 
@@ -471,17 +508,16 @@ test("requires all three reads plus a restatement before solving unlocks", async
   const session = await store.createSession(ownerKey, { title: "Three Reads walk" });
   await seedThreeReadsSession(store, session.id);
 
-  // The tutor tries to move on to planning every single turn; only the gate FSM,
-  // not the model, decides when that's actually allowed.
-  const push = {
+  const stayInGate = {
     move: "restate_prompt",
-    nextPhase: "plan_first_step",
+    nextPhase: "frame_task",
     spokenUtterance: "Tell me more about this problem."
   };
+  const advance = { ...stayInGate, nextPhase: "plan_first_step" };
 
   fake = installVoiceProviders({
     gateChecker: { accepted: true, notes: null },
-    tutor: push,
+    tutor: [stayInGate, stayInGate, stayInGate, advance],
     tts: new Uint8Array([1])
   });
 

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -142,31 +143,46 @@ function TraceRunList({
 }) {
   return (
     <aside className="trace-run-list" aria-label="Recent trace runs">
-      {runs.map((run) => (
-        <button
-          key={run.traceId}
-          className={run.traceId === selectedTraceId ? "trace-run trace-run--active" : "trace-run"}
-          type="button"
-          onClick={() => onSelect(run.traceId)}
-        >
-          <span className="trace-run-topline">
-            <span>{run.operation ?? "trace"}</span>
-            <strong>{formatMs(run.totalDurationMs)}</strong>
-          </span>
-          <span className="trace-run-meta">
-            {formatTime(run.endedAt)} · {run.slowestStage ?? "no stages"}
-          </span>
-          <span className={run.status === "error" ? "trace-status trace-status--error" : "trace-status"}>
-            {run.status}
-          </span>
-        </button>
-      ))}
+      <div className="trace-run-list-header">
+        <span>Recent runs</span>
+        <strong>{runs.length}</strong>
+      </div>
+      <div className="trace-run-strip">
+        {runs.map((run) => {
+          const selected = run.traceId === selectedTraceId;
+          return (
+            <button
+              key={run.traceId}
+              aria-current={selected ? "true" : undefined}
+              className={selected ? "trace-run trace-run--active" : "trace-run"}
+              type="button"
+              onClick={() => onSelect(run.traceId)}
+            >
+              <span className="trace-run-topline">
+                <span>{run.operation ?? "trace"}</span>
+                <strong>{formatMs(run.totalDurationMs)}</strong>
+              </span>
+              <span className="trace-run-meta">
+                {formatTime(run.endedAt)} · slowest {run.slowestStage ?? "none"}
+              </span>
+              <span className={run.status === "error" ? "trace-status trace-status--error" : "trace-status"}>
+                {run.status}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </aside>
   );
 }
 
 function TraceRunDetail({ run }: { run: LocalTraceRun }) {
-  const maxDuration = Math.max(1, ...run.events.map((event) => event.durationMs));
+  const timelineEvents = traceTimelineEvents(run);
+  const timelineDuration = Math.max(1, sumDurations(timelineEvents));
+  const slowest = timelineEvents.reduce<LocalTraceEvent | null>(
+    (current, event) => (!current || event.durationMs > current.durationMs ? event : current),
+    null
+  );
 
   return (
     <section className="trace-detail" aria-labelledby="trace-detail-title">
@@ -174,40 +190,81 @@ function TraceRunDetail({ run }: { run: LocalTraceRun }) {
         <div>
           <h2 id="trace-detail-title">{run.operation ?? "Trace"}</h2>
           <p>
-            {formatMs(run.totalDurationMs)} total · slowest {run.slowestStage ?? "none"}{" "}
-            {run.slowestStage ? formatMs(run.slowestDurationMs) : ""}
+            {formatTime(run.startedAt)} to {formatTime(run.endedAt)} · {timelineEvents.length} stages
           </p>
         </div>
-        <code>{run.traceId}</code>
+        <div className="trace-metrics" aria-label="Trace timing summary">
+          <span>
+            <strong>{formatMs(run.totalDurationMs)}</strong>
+            <small>Total</small>
+          </span>
+          <span>
+            <strong>{slowest ? formatMs(slowest.durationMs) : "0ms"}</strong>
+            <small>{slowest?.stage ?? "Slowest"}</small>
+          </span>
+        </div>
       </div>
 
-      <div className="trace-stage-stack">
-        {run.events.map((event) => (
-          <TraceStageRow key={event.id} event={event} maxDuration={maxDuration} />
-        ))}
+      <div className="trace-id-row">
+        <span>Trace ID</span>
+        <code title={run.traceId}>{run.traceId}</code>
+      </div>
+
+      <div className="trace-timeline-axis" aria-hidden="true">
+        <span>{formatTime(run.startedAt)}</span>
+        <span>{formatMs(timelineDuration)} staged duration</span>
+        <span>{formatTime(run.endedAt)}</span>
+      </div>
+
+      <div className="trace-timeline-viewport">
+        <div className="trace-timeline" role="list" aria-label="Trace stages from left to right">
+          {timelineEvents.map((event, index) => (
+            <TraceStageSegment
+              key={event.id}
+              event={event}
+              index={index}
+              totalDuration={timelineDuration}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );
 }
 
-function TraceStageRow({ event, maxDuration }: { event: LocalTraceEvent; maxDuration: number }) {
-  const width = `${Math.max(3, Math.round((event.durationMs / maxDuration) * 100))}%`;
+function TraceStageSegment({
+  event,
+  index,
+  totalDuration
+}: {
+  event: LocalTraceEvent;
+  index: number;
+  totalDuration: number;
+}) {
+  const share = Math.max(8, Math.round((event.durationMs / totalDuration) * 1000) / 10);
+  const style: CSSProperties & { "--trace-share": string } = { "--trace-share": `${share}%` };
+  const meta = traceEventMeta(event);
 
   return (
-    <article className={event.status === "error" ? "trace-stage trace-stage--error" : "trace-stage"}>
-      <div className="trace-stage-main">
-        <span className="trace-stage-name">{event.stage}</span>
-        <span className="trace-stage-time">{formatMs(event.durationMs)}</span>
-      </div>
-      <div className="trace-bar" aria-hidden="true">
-        <span style={{ inlineSize: width }} />
-      </div>
-      <div className="trace-stage-meta">
-        {event.workflow ? <span>{event.workflow}</span> : null}
-        {event.model ? <span>{event.model}</span> : null}
-        {event.route ? <span>{event.route}</span> : null}
-        <span>{formatTime(event.recordedAt)}</span>
-      </div>
+    <article
+      className={event.status === "error" ? "trace-stage trace-stage--error" : "trace-stage"}
+      role="listitem"
+      style={style}
+    >
+      <span className="trace-stage-pin" aria-hidden="true" />
+      <span className="trace-stage-index">{index + 1}</span>
+      <h3 className="trace-stage-name">{event.stage}</h3>
+      <strong className="trace-stage-time">{formatMs(event.durationMs)}</strong>
+      <p className="trace-stage-recorded">{formatTime(event.recordedAt)}</p>
+      {meta.length ? (
+        <div className="trace-stage-meta">
+          {meta.map((value) => (
+            <span key={value} title={value}>
+              {value}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -231,4 +288,21 @@ function formatTime(value: string): string {
     return "";
   }
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function traceTimelineEvents(run: LocalTraceRun): LocalTraceEvent[] {
+  const stages = run.events.filter((event) => !isRootTraceStage(event.stage));
+  return stages.length ? stages : run.events;
+}
+
+function isRootTraceStage(stage: string): boolean {
+  return stage === "voice.turn" || stage === "problem.extract_request";
+}
+
+function sumDurations(events: LocalTraceEvent[]): number {
+  return Math.round(events.reduce((total, event) => total + event.durationMs, 0) * 10) / 10;
+}
+
+function traceEventMeta(event: LocalTraceEvent): string[] {
+  return [event.workflow, event.model, event.route].filter((value): value is string => Boolean(value));
 }

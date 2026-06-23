@@ -78,8 +78,8 @@ export async function handleExtractQuestionRequest(
   const readUrl = await observeStage(requestObservability, "problem.read_url", {}, () =>
     createProblemImageReadUrl(env, request.objectKey)
   );
-  // Load the settings snapshot once for the extraction call so the extract-question stage's
-  // model is shipped from the DB rather than Worker B's env default.
+  // Load the settings snapshot once for the extraction call so the extract-question stage
+  // uses the DB-backed model setting.
   const settings = await observeStage(requestObservability, "problem.settings", {}, () =>
     loadProviderSettings(env)
   );
@@ -156,17 +156,18 @@ export function createProblemContextHandlerEnv(source: ProblemContextHandlerEnv)
     R2_ACCOUNT_ID: source.R2_ACCOUNT_ID,
     R2_BUCKET_NAME: source.R2_BUCKET_NAME,
     R2_SECRET_ACCESS_KEY: source.R2_SECRET_ACCESS_KEY,
-    // Extraction crosses the REASONING binding, so it MUST travel through this narrowed env;
-    // dropping it makes extractQuestionFromImageUrl throw HttpError(502) "binding absent".
-    ...(source.REASONING ? { REASONING: source.REASONING } : {}),
+    ...(source.OPENAI_API_KEY ? { OPENAI_API_KEY: source.OPENAI_API_KEY } : {}),
+    ...(source.OPENROUTER_API_KEY ? { OPENROUTER_API_KEY: source.OPENROUTER_API_KEY } : {}),
+    ...(source.REASONING_TEST_TRANSPORT
+      ? { REASONING_TEST_TRANSPORT: source.REASONING_TEST_TRANSPORT }
+      : {}),
     ...(source.PROBLEM_IMAGES ? { PROBLEM_IMAGES: source.PROBLEM_IMAGES } : {})
   };
 }
 
 export function assertProblemContextEnv(env: ProblemContextHandlerEnv): void {
-  // Extraction now crosses the REASONING binding; the only env this handler needs directly
-  // is the R2 credentials for presigning image URLs. (OPENAI_API_KEY is no longer required
-  // here — the model call, and its key, live in Worker B.)
+  // The handler needs R2 credentials directly for presigning image URLs. Reasoning provider
+  // keys are validated lazily by the selected model adapter.
   void env;
 }
 

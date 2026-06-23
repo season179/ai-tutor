@@ -5,7 +5,11 @@ import { installVoiceProviders, type VoiceProviderFake } from "./helpers/fake-vo
 import type { ProblemFrame } from "../src/modules/problems/problem-frame.ts";
 
 function env(fake: VoiceProviderFake | null) {
-  return { REASONING: fake?.reasoning };
+  return {
+    OPENAI_API_KEY: "test-openai-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    REASONING_TEST_TRANSPORT: fake?.reasoningTransport
+  };
 }
 
 let fake: VoiceProviderFake | null = null;
@@ -30,7 +34,7 @@ const frame: ProblemFrame = {
   visibleQuestion: "How many books are left?"
 };
 
-test("runVerifierAgent sends the verifier rubric over the binding and parses the verdict", async () => {
+test("runVerifierAgent sends the verifier rubric to reasoning and parses the verdict", async () => {
   fake = installVoiceProviders({ verifier: { studentStatus: "correct" } });
 
   const verdict = await runVerifierAgent(
@@ -69,26 +73,23 @@ test("runVerifierAgent never sends a worked answer to the model", async () => {
 });
 
 test("runVerifierAgent rejects an out-of-enum verdict", async () => {
-  // The harness's verifier slot returns whatever studentStatus it's configured with; to
-  // simulate the model returning an out-of-enum value, a raw binding fake is used so the
-  // response carries `studentStatus: "maybe"` which parseVerifierVerdict rejects.
-  const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/workflows/verifier")) {
-      return Response.json({
-        confidence: "high",
-        correctionHint: null,
-        misconceptionKey: null,
-        studentStatus: "maybe"
-      });
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  }) as Fetcher["fetch"];
-
   await assert.rejects(
     runVerifierAgent(
       { frame, kind: "step", question: "x", studentText: "y" },
-      { REASONING: { fetch: fetchImpl } as Fetcher }
+      {
+        OPENAI_API_KEY: "test-openai-key",
+        OPENROUTER_API_KEY: "test-openrouter-key",
+        REASONING_TEST_TRANSPORT: {
+          async runReasoningWorkflow() {
+            return {
+              confidence: "high",
+              correctionHint: null,
+              misconceptionKey: null,
+              studentStatus: "maybe"
+            };
+          }
+        }
+      }
     ),
     /verifier/i
   );

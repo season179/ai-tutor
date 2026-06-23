@@ -8,10 +8,9 @@
 -- splits model rows into provider + bare model columns while preserving this migration for
 -- databases that have already applied it.
 --
--- Worker A reads the stt_model / tts_model / tts_voice rows when building voice pipeline
--- options, and ships gate_check_model / verifier_model / tutor_model / extract_model across
--- the REASONING service binding as a per-call model override (Worker B's Flue workflows
--- forward `payload.model` into `session.prompt({ model })`).
+-- The app reads stt_model / tts_model / tts_voice when building voice pipeline options,
+-- and reads gate_check_model / verifier_model / tutor_model / extract_model as per-stage
+-- reasoning model overrides.
 CREATE TABLE provider_settings (
   type       TEXT PRIMARY KEY,
   value      TEXT NOT NULL,

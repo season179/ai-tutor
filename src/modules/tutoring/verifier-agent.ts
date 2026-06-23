@@ -87,11 +87,11 @@ function verifierUserContent(input: VerifierAgentInput, safeFrame: ProblemFrame)
  * Grades a step or final answer with a narrow LLM rubric. The frame is scrubbed of any
  * worked solution before it reaches the model (defense-in-depth on top of extraction).
  *
- * The model call crosses the REASONING binding (Worker B's verifier workflow). The
- * verifier is the ONLY fail-soft stage: a binding failure here propagates as HttpError(502)
- * straight into `gradeStudentTurn`'s existing try/catch, which degrades to an `unknown`
- * verdict. No new error mapper wraps this call — double-mapping would risk silently turning
- * a real failure into a wrong grade. See docs/adr/0001-flue-reasoning-worker.md.
+ * The model call runs through the in-app reasoning executor. The verifier is the ONLY
+ * fail-soft stage: a provider failure here propagates as HttpError(502) straight into
+ * `gradeStudentTurn`'s existing try/catch, which degrades to an `unknown` verdict. No new
+ * error mapper wraps this call — double-mapping would risk silently turning a real failure
+ * into a wrong grade.
  */
 export async function runVerifierAgent(
   input: VerifierAgentInput,
@@ -120,7 +120,7 @@ export async function runVerifierAgent(
     // Propagates as HttpError(502) into gradeStudentTurn's fail-soft catch.
     throw new HttpError(
       502,
-      "Verifier binding result did not match the verdict shape.",
+      "Verifier reasoning result did not match the verdict shape.",
       error instanceof Error ? error.message : String(error)
     );
   }

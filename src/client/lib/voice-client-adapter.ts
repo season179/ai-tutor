@@ -50,10 +50,9 @@ type VoiceClientAdapterOptions = {
 };
 
 /**
- * The single voice client adapter. The turn-based OpenAI pipeline is the only
- * backend, so there is no provider switch — `createVoiceClientAdapter` always
- * returns the pipeline adapter. (The realtime/WebRTC and LiveKit adapters were
- * removed in the Flue migration plan's Phase 1.)
+ * The single voice client adapter. The turn-based voice pipeline is the only backend,
+ * so there is no provider switch — `createVoiceClientAdapter` always returns the
+ * pipeline adapter. (The realtime/WebRTC and LiveKit adapters were removed earlier.)
  *
  * `requestReply` stays on the adapter surface (the typed-turn path no-ops it) so
  * call sites don't branch on provider; the pipeline adapter implements it as a

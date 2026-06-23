@@ -89,7 +89,7 @@ const maxTutorAttempts = 2;
 export type VoicePipelineServiceEnv = ReasoningEnv & {
   // STT/TTS model selection moved to the DB-backed provider_settings table (loaded per turn
   // via loadProviderSettings); OPENROUTER_API_KEY is the only audio-provider key Worker A
-  // holds (reasoning crosses the binding). DB holds the per-turn settings snapshot.
+  // holds. DB holds the per-turn settings snapshot.
   OPENROUTER_API_KEY: string | undefined;
   DB: D1Database;
 };
@@ -116,6 +116,33 @@ type TutorTurnInput = {
   supportLevel: SupportLevel;
 };
 
+type TutorPromptBuild = {
+  activeStepCharCount: number;
+  problemFrameCharCount: number;
+  recentHistoryCount: number;
+  stepVerifierVerdictCharCount: number;
+  studentTextCharCount: number;
+  text: string;
+};
+
+type CompactTutorHistoryEntry =
+  | { role: "student"; text: string }
+  | {
+      move: string | null;
+      nextPhase: string | null;
+      phase: string | null;
+      role: "tutor";
+      text: string;
+    }
+  | { accepted: boolean | null; checkKind: string | null; kind: "gate" }
+  | {
+      chip: string | null;
+      correctionHint: string | null;
+      kind: "verdict";
+      status: string | null;
+    }
+  | { hasImage: boolean | null; kind: "image" };
+
 export function createVoicePipelineOptions(
   env: VoicePipelineServiceEnv,
   settings: ProviderSettings
@@ -127,8 +154,8 @@ export function createVoicePipelineOptions(
     transcribeModel: settings.stt_model.model || defaultTranscribeModel,
     ttsModel: settings.tts_model.model || defaultTtsModel,
     // The session descriptor's `model` field is purely informational (it advertises the tutor
-    // model to the client); the actual tutor LLM call crosses the binding and is resolved per
-    // stage from settings inside the turn. Seed it from the tutor settings model so the
+    // model to the client); the actual tutor LLM call is resolved per stage from settings
+    // inside the turn. Seed it from the tutor settings model so the
     // descriptor reflects what's actually being used.
     tutorModel: providerModelSpecifier(settings.tutor_model) || defaultTutorModel,
     voice: settings.tts_voice || defaultTtsVoice
@@ -196,7 +223,14 @@ export async function handleVoicePipelineTurnWithStore(
       gateVerdict = await observeStage(
         turnObservability,
         "voice.gate_check",
-        { fromPhase, gateStage: checkedStage },
+        {
+          fromPhase,
+          gateStage: checkedStage,
+          quantityCount: problemContext.quantities.length,
+          relationshipCount: problemContext.relationships.length,
+          studentTextCharCount: studentText.length,
+          visibleQuestionCharCount: problemContext.visibleQuestion.length
+        },
         () => checkGateStage(checkedStage, problemContext, studentText, env, settings, turnObservability)
       );
       if (gateVerdict.accepted) {
@@ -214,7 +248,13 @@ export async function handleVoicePipelineTurnWithStore(
   const checkerVerdict = await observeStage(
     turnObservability,
     "voice.grade",
-    { fromPhase, gateStatus },
+    {
+      fromPhase,
+      gateStatus,
+      hasActiveStep: Boolean(activeStep),
+      hasProblemContext: Boolean(problemContext),
+      studentTextCharCount: studentText.length
+    },
     () =>
       gradeStudentTurn(
         {
@@ -236,7 +276,16 @@ export async function handleVoicePipelineTurnWithStore(
   const action = await observeStage(
     turnObservability,
     "voice.tutor_action",
-    { fromPhase, gateStatus, supportLevel },
+    {
+      fromPhase,
+      gateStatus,
+      hasActiveStep: Boolean(activeStep),
+      hasProblemContext: Boolean(problemContext),
+      hasVerifierVerdict: Boolean(checkerVerdict),
+      historyEventCount: detail.events.length,
+      studentTextCharCount: studentText.length,
+      supportLevel
+    },
     () =>
       proposeTutorAction(
         {
@@ -254,6 +303,7 @@ export async function handleVoicePipelineTurnWithStore(
         turnObservability
       )
   );
+  await recordTutorActionResult(action, turnObservability);
 
   const audio = await createTutorSpeech(action.spokenUtterance, options, turnObservability);
   const publicLesson = projectToPublicLesson(action, checkerVerdict);
@@ -407,7 +457,16 @@ async function handleKickoffTurn(
   const action = await observeStage(
     observability,
     "voice.tutor_action",
-    { fromPhase, gateStatus, supportLevel },
+    {
+      fromPhase,
+      gateStatus,
+      hasActiveStep: Boolean(activeStep),
+      hasProblemContext: Boolean(problemContext),
+      hasVerifierVerdict: false,
+      historyEventCount: detail.events.length,
+      studentTextCharCount: 0,
+      supportLevel
+    },
     () =>
       proposeTutorAction(
         {
@@ -426,6 +485,7 @@ async function handleKickoffTurn(
         observability
       )
   );
+  await recordTutorActionResult(action, observability);
 
   const audio = await createTutorSpeech(action.spokenUtterance, options, observability);
   const publicLesson = projectToPublicLesson(action, null);
@@ -731,7 +791,7 @@ async function proposeTutorAction(
       rejectionReasons,
       input.kickoff ?? false
     );
-    const payload = await proposeTutorActionViaBinding(
+    const payload = await proposeTutorActionViaReasoning(
       input,
       instructions,
       env,
@@ -742,7 +802,7 @@ async function proposeTutorAction(
     const outputText = extractOutputText(payload);
 
     if (!outputText) {
-      throw new HttpError(502, "OpenAI tutor response did not include output text.", payload);
+      throw new HttpError(502, "Tutor reasoning response did not include output text.", payload);
     }
 
     let parsed: JsonValue;
@@ -751,7 +811,7 @@ async function proposeTutorAction(
     } catch (error) {
       throw new HttpError(
         502,
-        "OpenAI tutor response was not valid JSON.",
+        "Tutor reasoning response was not valid JSON.",
         error instanceof Error ? error.message : String(error)
       );
     }
@@ -766,7 +826,7 @@ async function proposeTutorAction(
       continue;
     }
 
-    const verdict = validateTutorAction(proposed, { phase });
+    const verdict = validateTutorAction(proposed, { gateStatus, phase });
     if (verdict.ok) {
       return proposed;
     }
@@ -781,17 +841,17 @@ async function proposeTutorAction(
 }
 
 /**
- * The tutor's model call crosses the REASONING binding: the full scrubbed prompt
- * (instructions + the JSON prompt) ships as the workflow `input`, with the optional
- * per-turn image as a separate payload field. The re-ask loop wraps this — one binding
- * call per attempt — so a binding failure propagates as HttpError(502) and kills the turn
- * BEFORE commit (the tutor is NOT fail-soft; never retry past a successful commit since
- * TTS may have played).
+ * The tutor's model call runs through the in-app reasoning executor: the full scrubbed
+ * prompt (instructions + JSON prompt) ships as the workflow `input`, with the optional
+ * per-turn image as a separate payload field. The re-ask loop wraps this — one model call
+ * per attempt — so a model failure propagates as HttpError(502) and kills the turn BEFORE
+ * commit (the tutor is NOT fail-soft; never retry past a successful commit since TTS may
+ * have played).
  *
  * Returns the result wrapped in a synthetic `{ output_text }` envelope so the caller's
  * existing `extractOutputText` + `JSON.parse` + `proposedTutorActionFromJson` path is reused.
  */
-async function proposeTutorActionViaBinding(
+async function proposeTutorActionViaReasoning(
   input: TutorTurnInput,
   instructions: string,
   env: VoicePipelineServiceEnv,
@@ -799,16 +859,50 @@ async function proposeTutorActionViaBinding(
   attempt: number,
   observability?: ObservabilityContext
 ): Promise<JsonValue> {
-  const composedInput = composeReasoningInput(instructions, createTutorPrompt(input));
-  const extra: Record<string, JsonValue> = { ...modelExtraForStage(settings, "tutor-turn") };
+  const prompt = createTutorPrompt(input);
+  const composedInput = composeReasoningInput(instructions, prompt.text);
+  const extra: Record<string, JsonValue> = {
+    ...modelExtraForStage(settings, "tutor-turn"),
+    allowedMoves: [...allowedMoves(input.detail.session.currentPhase)],
+    allowedNextPhases: [...allowedNextPhases(input.detail.session.currentPhase, input.gateStatus)]
+  };
   if (input.image) {
     extra.image = splitPromptImage(input.image.dataUrl);
   }
   const result = await runReasoningWorkflow("tutor-turn", composedInput, env, extra, {
-    attributes: { attempt, hasImage: Boolean(input.image) },
+    attributes: {
+      activeStepCharCount: prompt.activeStepCharCount,
+      attempt,
+      hasImage: Boolean(input.image),
+      historyEventCount: input.detail.events.length,
+      inputCharCount: composedInput.length,
+      instructionsCharCount: instructions.length,
+      problemFrameCharCount: prompt.problemFrameCharCount,
+      promptCharCount: prompt.text.length,
+      recentHistoryCount: prompt.recentHistoryCount,
+      stepVerifierVerdictCharCount: prompt.stepVerifierVerdictCharCount,
+      studentTextCharCount: prompt.studentTextCharCount
+    },
     observability
   });
   return { output_text: JSON.stringify(result) };
+}
+
+async function recordTutorActionResult(
+  action: ProposedTutorAction,
+  observability?: ObservabilityContext
+): Promise<void> {
+  await observeStage(
+    observability,
+    "voice.tutor_action_result",
+    {
+      move: action.move,
+      nextPhase: action.statePatch?.nextPhase ?? null,
+      spokenUtteranceCharCount: action.spokenUtterance.length,
+      spokenUtteranceWordCount: countWords(action.spokenUtterance)
+    },
+    () => undefined
+  );
 }
 
 async function createTutorSpeech(
@@ -838,15 +932,29 @@ async function createTutorSpeech(
   );
 }
 
-function createTutorPrompt(input: TutorTurnInput): string {
+function createTutorPrompt(input: TutorTurnInput): TutorPromptBuild {
   const phase = input.detail.session.currentPhase;
+  const activeStep = toPublicActiveStep(input.activeStep);
+  const problemFrame = createTutorProblemFrame(input);
+  const stepVerifierVerdict = compactStepVerifierVerdict(input.stepVerifierVerdict);
+  const recentHistory = compactRecentHistory(input.detail.events);
+  const fallbackPrompt = !input.problemContext
+    ? scrubComputedSolutionFromText(input.detail.session.imagePrompt ?? "") || null
+    : null;
+  const activeStepJson = JSON.stringify(activeStep);
+  const problemFrameJson = JSON.stringify(problemFrame);
+  const stepVerifierVerdictJson = JSON.stringify(stepVerifierVerdict);
 
-  return JSON.stringify(
-    {
-      allowedMoves: allowedMoves(phase),
+  return {
+    activeStepCharCount: activeStepJson.length,
+    problemFrameCharCount: problemFrameJson.length,
+    recentHistoryCount: recentHistory.length,
+    stepVerifierVerdictCharCount: stepVerifierVerdictJson.length,
+    studentTextCharCount: input.studentText.length,
+    text: JSON.stringify({
       // The conversational model only ever sees the answer-free step (ask + scaffold);
       // the verifier's answer key (expectedAnswers/distractorNudges) stays out of the prompt.
-      activeStep: toPublicActiveStep(input.activeStep),
+      activeStep,
       comprehensionGate: {
         status: input.gateStatus,
         unknownTarget: scrubComputedSolutionFromText(input.problemContext?.unknownTarget ?? "") || null
@@ -854,38 +962,119 @@ function createTutorPrompt(input: TutorTurnInput): string {
       currentPhase: phase,
       currentStudentTurn: input.studentText,
       currentSession: {
-        imageName: input.detail.session.imageName,
-        // Defense-in-depth: scrub any worked answer that slipped through extraction or a
-        // typed-and-confirmed prompt before it can reach the model.
-        imagePrompt: scrubComputedSolutionFromText(input.detail.session.imagePrompt ?? "") || null,
+        imagePrompt: fallbackPrompt,
         status: input.detail.session.status,
         supportLevel: input.supportLevel
       },
-      forbiddenMoves: forbiddenMoves(phase),
-      problemFrame: input.problemContext
-        ? {
-            givens: input.problemContext.quantities,
-            relationships: input.problemContext.relationships.map((relationship) =>
-              scrubComputedSolutionFromText(relationship)
-            ),
-            unknownTarget: scrubComputedSolutionFromText(input.problemContext.unknownTarget ?? "") || null,
-            visibleQuestion: scrubComputedSolutionFromText(input.problemContext.visibleQuestion)
-          }
-        : null,
-      stepVerifierVerdict: input.stepVerifierVerdict,
-      // Events are stored newest-first; take the 14 most recent and present them
-      // oldest-to-newest so the model reads the conversation in order.
-      recentHistory: input.detail.events
-        .slice(0, 14)
-        .reverse()
-        .map((event) => ({
-          message: event.message,
-          value: event.value
-        }))
-    },
-    null,
-    2
-  );
+      problemFrame,
+      stepVerifierVerdict,
+      recentHistory
+    })
+  };
+}
+
+function createTutorProblemFrame(input: TutorTurnInput): JsonValue {
+  if (!input.problemContext) {
+    return null;
+  }
+
+  return {
+    givens: input.problemContext.quantities.map((quantity) =>
+      quantity.unit
+        ? { label: quantity.label, raw: quantity.raw, unit: quantity.unit }
+        : { label: quantity.label, raw: quantity.raw }
+    ),
+    relationships: input.problemContext.relationships.map((relationship) =>
+      scrubComputedSolutionFromText(relationship)
+    ),
+    unknownTarget: scrubComputedSolutionFromText(input.problemContext.unknownTarget ?? "") || null,
+    visibleQuestion: scrubComputedSolutionFromText(input.problemContext.visibleQuestion)
+  };
+}
+
+function compactStepVerifierVerdict(verdict: StepVerifierVerdict | null): JsonValue {
+  if (!verdict) {
+    return null;
+  }
+
+  return {
+    chip: verdict.chip,
+    confidence: verdict.confidence,
+    correctionHint: verdict.correctionHint,
+    misconceptionKey: verdict.misconceptionKey,
+    studentStatus: verdict.studentStatus
+  };
+}
+
+function compactRecentHistory(
+  events: TutorSessionDetail["events"],
+  limit = 8
+): CompactTutorHistoryEntry[] {
+  const compacted: CompactTutorHistoryEntry[] = [];
+  for (const event of events) {
+    const entry = compactSessionEvent(event);
+    if (!entry) {
+      continue;
+    }
+    compacted.push(entry);
+    if (compacted.length >= limit) {
+      break;
+    }
+  }
+
+  return compacted.reverse();
+}
+
+function compactSessionEvent(
+  event: TutorSessionDetail["events"][number]
+): CompactTutorHistoryEntry | null {
+  const value = asRecord(event.value);
+
+  if (event.message === studentTurnEventMessage) {
+    const text = compactText(asString(value.text));
+    return text ? { role: "student", text } : null;
+  }
+
+  if (event.message === "Problem image submitted") {
+    const text = compactText(asString(value.text));
+    if (text) {
+      return { role: "student", text };
+    }
+    return { hasImage: typeof value.hasImage === "boolean" ? value.hasImage : null, kind: "image" };
+  }
+
+  if (event.message === tutorTurnEventMessage) {
+    const text = compactText(asString(value.text));
+    if (!text) {
+      return null;
+    }
+    return {
+      move: asString(value.move) ?? null,
+      nextPhase: asString(value.nextPhase) ?? null,
+      phase: asString(value.phase) ?? null,
+      role: "tutor",
+      text
+    };
+  }
+
+  if (event.message === "Gate check") {
+    return {
+      accepted: typeof value.accepted === "boolean" ? value.accepted : null,
+      checkKind: asString(value.checkKind) ?? null,
+      kind: "gate"
+    };
+  }
+
+  if (event.message === "Step verify" || event.message === "Answer check") {
+    return {
+      chip: asString(value.chip) ?? null,
+      correctionHint: compactText(asString(value.correctionHint)) ?? null,
+      kind: "verdict",
+      status: asString(value.studentStatus) ?? null
+    };
+  }
+
+  return null;
 }
 
 /** Tells the model which of the Three Reads to run for the current gate status. */
@@ -913,6 +1102,7 @@ function tutorActionInstructions(
 ): string {
   const allowed = allowedMoves(phase).join(", ");
   const forbidden = forbiddenMoves(phase).join(", ");
+  const nextPhases = allowedNextPhases(phase, gateStatus).join(", ");
   const kickoffNote = kickoff
     ? "\nThis is the opening turn — the student has not spoken yet. Greet them warmly as Coach Echo, briefly name the problem you'll work through together (use the problem frame), and invite them into the first reading. Do not solve, hint at, or reveal any answer."
     : "";
@@ -920,7 +1110,7 @@ function tutorActionInstructions(
     phase === "frame_task" && isGateReadStatus(gateStatus)
       ? gateReadNote(gateStatus)
       : gateStatus === "complete"
-        ? "\nThe comprehension gate is complete — you may acknowledge their restatement and move on when ready."
+        ? "\nThe comprehension gate is complete — acknowledge briefly, then either stay in this phase for one bridge or advance to a legal nextPhase."
         : "";
   const gradedThing = phase === "answer_check" ? "final answer" : "step answer";
   const verifierNote = !stepVerifierVerdict
@@ -947,7 +1137,7 @@ Hard rules:
 - Return only the requested JSON schema.
 - "move" must be one of the allowed moves above.
 - "spokenUtterance" is the exact words spoken aloud: at most 32 words, exactly one cognitive demand (one question or one small step), ending so it clearly waits for the student. Never reveal the final answer.
-- "nextPhase" is where the session should go next; keep it at "${phase}" unless the student is ready to move on.${retry}`;
+- "nextPhase" must be exactly one of: ${nextPhases}. Use "${phase}" when staying put. Do not invent phases; there is no "solve_problem".${retry}`;
 }
 
 const proposableMoves: readonly ProposedMove[] = [...tutorMoves, ...gateForbiddenMoves];
@@ -975,11 +1165,16 @@ function asProposedMove(value: JsonValue | undefined): ProposedMove {
 }
 
 function asOptionalSessionPhase(value: JsonValue | undefined): SessionPhase | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
   if (typeof value === "string" && sessionPhases.some((candidate) => candidate === value)) {
     return value as SessionPhase;
   }
 
-  return undefined;
+  const label = typeof value === "string" ? ` "${value}"` : "";
+  throw new Error(`Invalid nextPhase${label}; expected one of: ${sessionPhases.join(", ")}`);
 }
 
 // The client renders the legacy six-phase lesson shape; project the canonical turn
@@ -1038,9 +1233,9 @@ function projectToPublicLesson(
 }
 
 /**
- * Splits a `data:<mime>;base64,<data>` URL into the Flue PromptImage fields the
- * tutor-turn workflow expects (`{ type: 'image', data, mimeType }`). The data URL is the
- * shape VoicePreparedImage already carries; the workflow reattaches it as a vision input.
+ * Splits a `data:<mime>;base64,<data>` URL into the image fields the reasoning executor
+ * expects (`{ type: 'image', data, mimeType }`). The data URL is the shape
+ * VoicePreparedImage already carries; the executor reattaches it as a vision input.
  */
 function splitPromptImage(dataUrl: string): JsonValue {
   const commaIndex = dataUrl.indexOf(",");
@@ -1064,6 +1259,18 @@ function asRecord(value: JsonValue | undefined): Record<string, JsonValue> {
 
 function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value ? value : undefined;
+}
+
+function compactText(value: string | undefined, maxLength = 240): string | null {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 3)}...` : trimmed;
+}
+
+function countWords(value: string): number {
+  return value.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function asRequiredText(value: JsonValue | undefined, key: string): string {

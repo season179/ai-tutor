@@ -1,19 +1,14 @@
 /**
- * extractQuestion (vision) over the REASONING service binding — the Phase 4 "last
- * straggler" migration proof.
+ * extractQuestion (vision) through the in-app reasoning executor.
  *
- * With the flag on, the vision extraction routes through Worker B's extract-question
- * workflow. Worker A ships the extraction instructions as the workflow `input` and the
- * presigned image URL as `imageUrl`; the workflow fetches the bytes and attaches them as a
- * vision image. Worker A still applies normalizeExtractionResponse (scrub + outcome
+ * The app ships the extraction instructions as the reasoning `input` and the presigned
+ * image URL as `imageUrl`, then applies normalizeExtractionResponse (scrub + outcome
  * normalization) to the result.
- *
- * The binding fake here also answers the workflow's image fetch, since Worker B fetches the
- * URL itself (Flue PromptImage needs bytes, not a URL).
  */
 
 import assert from "node:assert/strict";
 
+import { HttpError } from "../src/core/http-error.ts";
 import { extractQuestionFromImageUrl } from "../src/modules/problems/question-extraction-service.ts";
 
 const fullExtractionPayload = {
@@ -34,46 +29,35 @@ const fullExtractionPayload = {
 
 const imageUrl = "https://r2.example.com/session-1/image.jpg";
 
-type FetchCall = { url: string; body?: string };
+type ReasoningCall = { imageUrl?: string; input: string; stage: string };
 
-/**
- * Builds a Fetcher fake that serves the extract-question workflow. (The workflow's own
- * image fetch — `fetchPromptImage` — runs inside Worker B's runtime, not here; this fake
- * stands in for Worker B at the binding boundary, where Worker A only invokes the
- * workflow and passes the image URL in the payload.)
- */
-function makeBindingFake(result: unknown, calls: FetchCall[]): Fetcher {
-  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    calls.push({ url, body: typeof init?.body === "string" ? init.body : undefined });
-
-    if (url.includes("/workflows/extract-question")) {
-      return Response.json(result);
+function makeReasoningTransport(result: unknown, calls: ReasoningCall[]) {
+  return {
+    async runReasoningWorkflow(payload: { stage: string; input: string; imageUrl?: string }) {
+      calls.push({
+        imageUrl: payload.imageUrl,
+        input: payload.input,
+        stage: payload.stage
+      });
+      return result;
     }
-
-    throw new Error(`unexpected REASONING fetch: ${url}`);
-  }) as Fetcher["fetch"];
-
-  return { fetch: fetchImpl } as Fetcher;
+  };
 }
 
-test("extractQuestionFromImageUrl routes through the binding with the flag on and scrubs the result", async () => {
-  const calls: FetchCall[] = [];
-  const binding = makeBindingFake(fullExtractionPayload, calls);
+test("extractQuestionFromImageUrl routes through reasoning and scrubs the result", async () => {
+  const calls: ReasoningCall[] = [];
   const env = {
-    REASONING: binding
+    REASONING_TEST_TRANSPORT: makeReasoningTransport(fullExtractionPayload, calls)
   };
 
   const response = await extractQuestionFromImageUrl(imageUrl, env);
 
-  // The workflow was invoked (and the image URL was passed in the payload).
-  const workflowCall = calls.find((c) => c.url.includes("/workflows/extract-question"));
-  assert.ok(workflowCall, "expected a workflow invocation");
-  const payload = JSON.parse(workflowCall!.body ?? "{}") as { imageUrl?: string; input?: string };
-  assert.equal(payload.imageUrl, imageUrl);
-  assert.match(payload.input ?? "", /Extract the homework problem/);
+  const reasoningCall = calls.find((call) => call.stage === "extract-question");
+  assert.ok(reasoningCall, "expected a reasoning invocation");
+  assert.equal(reasoningCall!.imageUrl, imageUrl);
+  assert.match(reasoningCall!.input, /Extract the homework problem/);
 
-  // Worker A's normalization still ran on the binding result.
+  // The app's normalization still ran on the reasoning result.
   assert.equal(response.outcome, "extracted");
   assert.equal(response.question, "What is the value of x?");
   assert.equal(response.frame.unknownTarget, "the value of x");
@@ -81,14 +65,16 @@ test("extractQuestionFromImageUrl routes through the binding with the flag on an
 });
 
 test("extractQuestionFromImageUrl degrades an out-of-enum problemType to \"other\" instead of failing", async () => {
-  // Regression: Worker B's schema once typed problemType as a bare string, so the model could
-  // return "word problem" (space) where Worker A's enum requires "word_problem" (underscore) —
-  // failing the whole extraction with "did not match the extraction shape". problemType is
-  // supplementary, so an unrecognized value must degrade to "other", not sink the upload.
-  const calls: FetchCall[] = [];
-  const binding = makeBindingFake({ ...fullExtractionPayload, problemType: "word problem" }, calls);
+  // Regression: an older reasoning schema once typed problemType as a bare string, so the
+  // model could return "word problem" (space) where the app enum requires "word_problem"
+  // (underscore). problemType is supplementary, so an unrecognized value must degrade to
+  // "other", not sink the upload.
+  const calls: ReasoningCall[] = [];
   const env = {
-    REASONING: binding
+    REASONING_TEST_TRANSPORT: makeReasoningTransport(
+      { ...fullExtractionPayload, problemType: "word problem" },
+      calls
+    )
   };
 
   const response = await extractQuestionFromImageUrl(imageUrl, env);
@@ -97,19 +83,15 @@ test("extractQuestionFromImageUrl degrades an out-of-enum problemType to \"other
   assert.equal(response.frame.problemType, "other");
 });
 
-test("extractQuestionFromImageUrl maps a binding failure to HttpError(502)", async () => {
+test("extractQuestionFromImageUrl maps a reasoning failure to HttpError(502)", async () => {
   // Extraction is NOT fail-soft (it runs at session creation, outside the turn loop): a
-  // binding failure must surface, not degrade.
-  const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/workflows/extract-question")) {
-      return new Response("upstream error", { status: 500 });
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  }) as Fetcher["fetch"];
-
+  // reasoning failure must surface, not degrade.
   const env = {
-    REASONING: { fetch: fetchImpl } as Fetcher
+    REASONING_TEST_TRANSPORT: {
+      async runReasoningWorkflow() {
+        throw new HttpError(502, "upstream error");
+      }
+    }
   };
 
   await assert.rejects(
@@ -121,27 +103,13 @@ test("extractQuestionFromImageUrl maps a binding failure to HttpError(502)", asy
   );
 });
 
-test("extractQuestionFromImageUrl uses the binding by default (the flag is gone)", async () => {
-  // The legacy OpenAI path was removed; the binding is the sole transport. This guards that
-  // no stray OpenAI fetch happens — the only network call is the workflow invocation.
-  const calls: string[] = [];
-  const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
-    const url = String(input);
-    calls.push(url);
-    if (url.includes("/workflows/extract-question")) {
-      return Response.json(fullExtractionPayload);
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  }) as Fetcher["fetch"];
-
-  // Silence the fail-safe log (extraction is not fail-soft, but this test exercises the
-  // happy path; kept for parity with the binding-failure test above).
+test("extractQuestionFromImageUrl uses reasoning by default", async () => {
+  const calls: ReasoningCall[] = [];
   const env = {
-    REASONING: { fetch: fetchImpl } as Fetcher
+    REASONING_TEST_TRANSPORT: makeReasoningTransport(fullExtractionPayload, calls)
   };
 
   const response = await extractQuestionFromImageUrl(imageUrl, env);
   assert.equal(response.outcome, "extracted");
-  // Only the workflow call ran; no OpenAI /v1/responses fetch.
-  assert.ok(calls.every((url) => !url.includes("api.openai.com")));
+  assert.equal(calls.length, 1);
 });

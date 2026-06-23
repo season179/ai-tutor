@@ -1,5 +1,13 @@
-import { getSettingsFn, saveSettingsFn } from "../../modules/settings/server/settings-fns.js";
-import type { ProviderSettings, ProviderSettingsPatch } from "../../modules/settings/settings-types.js";
+import {
+  getSettingsFn,
+  getSettingsModelOptionsFn,
+  saveSettingsFn
+} from "../../modules/settings/server/settings-fns.js";
+import type {
+  ProviderSettings,
+  ProviderSettingsPatch,
+  SettingsModelOptions
+} from "../../modules/settings/settings-types.js";
 import { errorMessage } from "./error-message.js";
 
 export class SettingsApiError extends Error {
@@ -35,6 +43,14 @@ export async function getSettings(): Promise<ProviderSettings> {
     return await getSettingsFn();
   } catch (error) {
     throw toSettingsApiError(error, "Could not load settings.");
+  }
+}
+
+export async function getSettingsModelOptions(): Promise<SettingsModelOptions> {
+  try {
+    return await getSettingsModelOptionsFn();
+  } catch (error) {
+    throw toSettingsApiError(error, "Could not load model options.");
   }
 }
 

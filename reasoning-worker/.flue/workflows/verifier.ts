@@ -13,13 +13,15 @@
 // ({ studentStatus, confidence, correctionHint, misconceptionKey }).
 import { createAgent, type FlueContext, type WorkflowRouteHandler } from "@flue/runtime";
 import * as v from "valibot";
+import { verifierThinkingLevel } from "../reasoning-levels.js";
 
 // No auth between workers (platform identity via the service binding). See gate-check.ts.
 export const route: WorkflowRouteHandler = async (_context, next) => next();
 
-const verifier = createAgent(() => ({
-  model: process.env.REASONING_MODEL ?? "openai/gpt-5.5"
-}));
+const verifier = createAgent(() => {
+  const model = process.env.REASONING_MODEL ?? "openai/gpt-5.5";
+  return { model, thinkingLevel: verifierThinkingLevel(model) };
+});
 
 // The shared structured-output contract. Mirrors the OpenAI verifierJsonSchema so Worker
 // A's parseVerifierVerdict sees the same shape it always has.
@@ -48,9 +50,11 @@ export type VerifierPayload = {
 export async function run({ init, payload }: FlueContext<VerifierPayload>) {
   const harness = await init(verifier);
   const session = await harness.session();
+  const model = payload.model ?? process.env.REASONING_MODEL ?? "openai/gpt-5.5";
 
   const { data } = await session.prompt(payload.input, {
     result: verifierResult,
+    thinkingLevel: verifierThinkingLevel(model),
     ...(payload.model ? { model: payload.model } : {})
   });
 

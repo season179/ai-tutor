@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { mapD1SessionRow, MemorySessionStore } from "../src/modules/sessions/memory-session-store.ts";
+import {
+  mapD1ProblemContextRow,
+  mapD1SessionRow,
+  MemorySessionStore
+} from "../src/modules/sessions/memory-session-store.ts";
 import { updateSession } from "../src/modules/sessions/session-handler.ts";
 import type { RequestContext } from "../src/core/request-context.ts";
 
@@ -293,6 +297,36 @@ test("mapD1SessionRow parses active_step_json", () => {
   assert.equal(session.activeStep?.expectedAnswers[0], 4);
   assert.equal(session.currentPhase, "step_loop");
   assert.equal(session.supportLevel, 1);
+});
+
+test("mapD1ProblemContextRow infers quantities for old rows that stored an empty list", () => {
+  const fullStatement =
+    "智民小学获得 RM70 000 捐款。校长拨出 RM54 000 给图书馆，剩下的钱要购买单价是 RM1 980 的科学仪器。校长能够购买多少个科学仪器？";
+
+  const context = mapD1ProblemContextRow({
+    confirmed_question: null,
+    created_at: "2026-06-23T09:54:37.662Z",
+    diagram_description: null,
+    extracted_text: fullStatement,
+    extraction_confidence: "medium",
+    extraction_outcome: "extracted",
+    id: "problem-1",
+    language_is_subject: 0,
+    problem_type: "other",
+    quantities_json: "[]",
+    r2_object_key: "session/image.jpg",
+    relationships_json: "[]",
+    session_id: "session-1",
+    skill_keys_json: "[]",
+    task_language: "en",
+    unknown_target: fullStatement,
+    updated_at: "2026-06-23T09:54:39.899Z"
+  });
+
+  assert.deepEqual(
+    context.quantities.map((quantity) => quantity.raw),
+    ["RM70 000", "RM54 000", "RM1 980"]
+  );
 });
 
 test("confirming a typed prompt seeds problem context and gate status", async () => {

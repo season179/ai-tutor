@@ -13,6 +13,7 @@
 // current gateCheckerJsonSchema: { accepted: boolean, notes: string | null }.
 import { createAgent, type FlueContext, type WorkflowRouteHandler } from "@flue/runtime";
 import * as v from "valibot";
+import { gateCheckThinkingLevel } from "../reasoning-levels.js";
 
 // Default route handler: no auth between workers (platform identity via the service
 // binding). If Worker B is ever exposed publicly, add HMAC verification here before
@@ -22,9 +23,10 @@ export const route: WorkflowRouteHandler = async (_context, next) => next();
 // The agent carries only the model specifier — the full prompt arrives per-call in the
 // payload. The model comes from the REASONING_MODEL var (provider/model string), so
 // swapping providers is a config change in wrangler.jsonc, not a code change here.
-const gateChecker = createAgent(() => ({
-  model: process.env.REASONING_MODEL ?? "openai/gpt-5.5"
-}));
+const gateChecker = createAgent(() => {
+  const model = process.env.REASONING_MODEL ?? "openai/gpt-5.5";
+  return { model, thinkingLevel: gateCheckThinkingLevel(model) };
+});
 
 // The shared structured-output contract. Mirrors the OpenAI gateCheckerJsonSchema so
 // Worker A's parseGateCheckerVerdict sees the same shape it always has.
@@ -45,9 +47,11 @@ export type GateCheckPayload = {
 export async function run({ init, payload }: FlueContext<GateCheckPayload>) {
   const harness = await init(gateChecker);
   const session = await harness.session();
+  const model = payload.model ?? process.env.REASONING_MODEL ?? "openai/gpt-5.5";
 
   const { data } = await session.prompt(payload.input, {
     result: gateCheckResult,
+    thinkingLevel: gateCheckThinkingLevel(model),
     ...(payload.model ? { model: payload.model } : {})
   });
 

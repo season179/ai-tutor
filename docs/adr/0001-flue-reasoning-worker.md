@@ -1,8 +1,7 @@
 # ADR-0001: Re-platform reasoning on a Flue worker (Flue vs. thin provider port)
 
 Date: 2026-06-21
-Status: Accepted (Phases 1–4 complete: the binding is the sole reasoning transport; the
-feature flag was removed in Phase 4.)
+Status: Superseded by ADR-0002. This ADR records the prior two-worker Flue decision.
 Supersedes the open question in `realtime-removal-and-flue-migration-plan.md` §3 / §5.
 
 ## Context

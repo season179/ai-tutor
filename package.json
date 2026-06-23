@@ -13,9 +13,8 @@
     "check:worker-types": "wrangler types --check && node scripts/strip-worker-types.mjs",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run",
-    "dev": "concurrently --names app,reasoning --prefix-colors blue,magenta \"pnpm dev:app\" \"pnpm dev:reasoning\"",
+    "dev": "pnpm dev:app",
     "dev:app": "PORTLESS_TLD=dev portless",
-    "dev:reasoning": "cd reasoning-worker && npm run dev",
     "dev:vite": "vite dev --port ${PORT:-3000}",
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply ai-tutor-sessions --local",
@@ -30,6 +29,9 @@
     "script": "dev:vite"
   },
   "dependencies": {
+    "@tanstack/ai": "^0.33.0",
+    "@tanstack/ai-openai": "^0.15.3",
+    "@tanstack/ai-openrouter": "^0.14.1",
     "@tanstack/react-query": "5.101.0",
     "@tanstack/react-router": "1.170.16",
     "@tanstack/react-router-ssr-query": "1.167.1",
@@ -47,7 +49,6 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
-    "concurrently": "10.0.3",
     "portless": "0.14.0",
     "typescript": "6.0.3",
     "vite": "8.0.16",

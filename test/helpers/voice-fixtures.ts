@@ -10,7 +10,7 @@ import type { VoicePipelineServiceEnv } from "../../src/modules/voice/voice-pipe
 import type { RequestContext } from "../../src/core/request-context.js";
 import { MemorySessionStore } from "../../src/modules/sessions/memory-session-store.js";
 import type { ProblemFrame } from "../../src/modules/problems/problem-frame.js";
-import { currentReasoningBinding } from "./fake-voice-providers.js";
+import { currentReasoningTransport } from "./fake-voice-providers.js";
 import { defaultProviderSettings } from "../../src/modules/settings/settings-store.js";
 import type { ProviderSettings } from "../../src/modules/settings/settings-types.js";
 
@@ -57,17 +57,16 @@ function makeSettingsD1Stub(snapshot: ProviderSettings = defaultProviderSettings
 
 export const settingsD1Stub = makeSettingsD1Stub();
 
-// REASONING resolves lazily to whichever fake the test installed, so the same env object
-// works across tests without each one re-wiring the binding. (The binding is the sole
-// reasoning transport now; tests that exercise a reasoning stage must install a fake first.)
-// The audio key is OpenRouter (STT/TTS swapped off OpenAI); the OpenAI tutor/gate/verifier
-// vars are vestigial but kept so the env satisfies the type. DB is the settings stub above —
-// the turn path reads the provider/model snapshot from it per turn.
+// The reasoning test transport resolves lazily to whichever fake the test installed, so
+// the same env object works across tests without each one re-wiring the model executor.
+// The audio key is OpenRouter (STT/TTS); DB is the settings stub above — the turn path
+// reads the provider/model snapshot from it per turn.
 export const voiceServiceEnv: VoicePipelineServiceEnv = {
   OPENROUTER_API_KEY: "test-key",
+  OPENAI_API_KEY: "test-openai-key",
   DB: settingsD1Stub,
-  get REASONING() {
-    return currentReasoningBinding();
+  get REASONING_TEST_TRANSPORT() {
+    return currentReasoningTransport();
   }
 };
 

@@ -1,14 +1,13 @@
 /**
- * Proves the per-stage model from the DB-backed settings snapshot is actually shipped across
- * the REASONING binding — the core wiring of the settings → model feature.
+ * Proves the per-stage model from the DB-backed settings snapshot is actually shipped into
+ * the reasoning payload — the core wiring of the settings → model feature.
  *
  * The 4 reasoning stages all use the same `modelExtraForStage(settings, stage)` helper to
- * build `{ model }` in the binding `extra` payload; the gate-check stage stands in for all
+ * build `{ model }` in the reasoning `extra` payload; the gate-check stage stands in for all
  * four (the helper's per-stage mapping is pinned in settings-store.test.ts). This test
- * captures the raw binding payload and asserts the settings model survived the hop, so a
+ * captures the raw reasoning payload and asserts the settings model survived the hop, so a
  * regression that drops the `extra.model` plumbing (in voice-pipeline-service OR in
- * Worker B's payload forwarding) fails here rather than silently falling back to the env
- * default.
+ * provider call handoff) fails here rather than silently falling back to the stage default.
  */
 
 import assert from "node:assert/strict";
@@ -45,71 +44,52 @@ const settings: ProviderSettings = {
   extract_model: { provider: "openai", model: "extract" }
 };
 
-test("checkGateStage ships the settings gate_check_model in the binding payload", async () => {
-  const capturedBodies: string[] = [];
-  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/workflows/gate-check")) {
-      if (typeof init?.body === "string") {
-        capturedBodies.push(init.body);
-      }
-      return Response.json({
-        result: { accepted: true, notes: null },
-        runId: "test",
-        streamUrl: "runs/test",
-        offset: "-1"
-      });
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  }) as Fetcher["fetch"];
+test("checkGateStage ships the settings gate_check_model in the reasoning payload", async () => {
+  const capturedModels: (string | undefined)[] = [];
+  const capturedInputs: string[] = [];
 
   await checkGateStage(
     "context",
     frame,
-    "the stickers are shared",
-    { REASONING: { fetch: fetchImpl } as Fetcher },
+    "my words about it",
+    {
+      REASONING_TEST_TRANSPORT: {
+        async runReasoningWorkflow(payload) {
+          capturedModels.push(payload.model);
+          capturedInputs.push(payload.input);
+          return { accepted: true, notes: null };
+        }
+      }
+    },
     settings
   );
 
-  assert.equal(capturedBodies.length, 1, "one binding call expected");
-  const payload = JSON.parse(capturedBodies[0]!) as { model?: string; input?: string };
+  assert.equal(capturedModels.length, 1, "one reasoning call expected");
   assert.equal(
-    payload.model,
+    capturedModels[0],
     customGateModelSpecifier,
-    "the split gate_check_model from settings must travel in the binding payload as provider/model"
+    "the split gate_check_model from settings must travel in the reasoning payload as provider/model"
   );
-  assert.ok(typeof payload.input === "string" && payload.input.length > 0, "input still travels");
+  assert.ok(capturedInputs[0] && capturedInputs[0].length > 0, "input still travels");
 });
 
 test("checkGateStage omits `model` from the payload when no settings are passed", async () => {
-  // Back-compat: callers that don't thread settings (e.g. legacy direct calls) must NOT
-  // ship a blank `model`, or Worker B would override its env default with empty. The
-  // helper returns {} when there's no model, so the key is absent entirely.
-  const capturedBodies: string[] = [];
-  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    if (url.includes("/workflows/gate-check")) {
-      if (typeof init?.body === "string") {
-        capturedBodies.push(init.body);
-      }
-      return Response.json({
-        result: { accepted: true, notes: null },
-        runId: "test",
-        streamUrl: "runs/test",
-        offset: "-1"
-      });
-    }
-    throw new Error(`unexpected fetch: ${url}`);
-  }) as Fetcher["fetch"];
+  const capturedModels: (string | undefined)[] = [];
 
   await checkGateStage(
     "context",
     frame,
-    "the stickers are shared",
-    { REASONING: { fetch: fetchImpl } as Fetcher }
-    // no settings → Worker B uses its env default
+    "my words about it",
+    {
+      REASONING_TEST_TRANSPORT: {
+        async runReasoningWorkflow(payload) {
+          capturedModels.push(payload.model);
+          return { accepted: true, notes: null };
+        }
+      }
+    }
+    // no settings -> the executor uses its stage default
   );
 
-  const payload = JSON.parse(capturedBodies[0]!) as { model?: string };
-  assert.ok(!("model" in payload), "`model` key must be absent when no settings are passed");
+  assert.equal(capturedModels[0], undefined, "`model` must be undefined when no settings are passed");
 });

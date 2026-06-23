@@ -369,7 +369,7 @@ test("a verifier response missing output text fails safe to unknown (turn contin
   }
 });
 
-test("a gate-checker binding error fails the whole turn (unlike the verifier's fail-soft)", async () => {
+test("a gate-checker reasoning error fails the whole turn (unlike the verifier's fail-soft)", async () => {
   const store = new MemorySessionStore();
   const session = await store.createSession(ownerKey, { title: "Gate 500" });
   await seedGateSession(store, session.id, "needs_context_read");
@@ -379,7 +379,7 @@ test("a gate-checker binding error fails the whole turn (unlike the verifier's f
   // propagates and the turn dies. Only runVerifierAgent sits inside gradeStudentTurn's
   // try/catch. The asymmetry is load-bearing — lock it here.
   //
-  // Over the REASONING binding a Worker B failure normalizes to HttpError(502) (the gate
+  // A reasoning failure normalizes to HttpError(502) (the gate
   // contract is "the turn dies before commit," not upstream-status preservation); the test
   // asserts that death + the tutor/TTS never running, which is the load-bearing part.
   fake = installVoiceProviders({
@@ -590,7 +590,7 @@ test("a turn whose phase was raced forward before commit is rejected with 409", 
 
   fake = installVoiceProviders({
     gateChecker: { accepted: true, notes: null },
-    tutor: { move: "restate_prompt", nextPhase: "plan_first_step", spokenUtterance: "Onwards." },
+    tutor: { move: "restate_prompt", nextPhase: "frame_task", spokenUtterance: "Onwards." },
     tts: new Uint8Array([1])
   });
 

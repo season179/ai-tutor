@@ -45,8 +45,7 @@ test("a full snapshot (every slot) still validates", () => {
 });
 
 test("an empty model value is rejected (every slot, when present, must be non-empty)", () => {
-  // The store's upsert would write a blank, and Worker B would override its env default with
-  // empty — reject at the schema gate.
+  // The store's upsert would write a blank model, so reject at the schema gate.
   assert.throws(() =>
     providerSettingsPatchSchema.parse({ tutor_model: { provider: "openrouter", model: "" } })
   );

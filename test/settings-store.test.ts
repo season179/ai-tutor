@@ -124,13 +124,12 @@ test("modelExtraForStage returns { model } for a known setting and {} when empty
   const store = new MemorySettingsStore();
   const settings = await store.getAllSettings();
 
-  // The tutor model is stored split, then recomposed for Flue/Pi's provider/model resolver.
+  // The tutor model is stored split, then recomposed for the reasoning provider resolver.
   assert.deepEqual(modelExtraForStage(settings, "tutor-turn"), {
     model: providerModelSpecifier(settings.tutor_model)
   });
 
-  // When the stage's setting is cleared, the helper returns no model field — Worker B then
-  // falls back to its env default rather than being overridden with a blank.
+  // When the stage's setting is cleared, the helper returns no model field.
   const cleared = await store.saveSettings({ tutor_model: { provider: "openrouter", model: "" } });
   assert.deepEqual(modelExtraForStage(cleared, "tutor-turn"), {});
 });

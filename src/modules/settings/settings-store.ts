@@ -32,9 +32,9 @@ export const defaultProviderSettings: ProviderSettings = {
   stt_model: { provider: "openrouter", model: "qwen/qwen3-asr-flash-2026-02-10" },
   tts_model: { provider: "openrouter", model: "google/gemini-3.1-flash-tts-preview" },
   tts_voice: "Aoede",
-  gate_check_model: { provider: "openai", model: "gpt-5.5" },
+  gate_check_model: { provider: "openai", model: "gpt-5.4-mini" },
   verifier_model: { provider: "openai", model: "gpt-5.5" },
-  tutor_model: { provider: "openrouter", model: "nvidia/nemotron-3-ultra-550b-a55b" },
+  tutor_model: { provider: "openrouter", model: "google/gemini-3.5-flash" },
   extract_model: { provider: "openai", model: "gpt-5.5" }
 };
 

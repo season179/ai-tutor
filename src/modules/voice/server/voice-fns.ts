@@ -95,9 +95,8 @@ export const voicePipelineTurnFn = createServerFn({ method: "POST" })
     assertVoiceTurnWithinLimit(data);
     const { context, store } = await authenticateServerRequest();
 
-    // One Durable Object per session serializes turns and owns the hint timer; route
-    // through it when the binding is present, falling back to the direct pipeline
-    // (e.g. local dev without the DO) otherwise.
+    // One Durable Object per session serializes turns and owns the hint timer, falling
+    // back to the direct pipeline when the binding is unavailable in a local/test env.
     const parsed = parseVoicePipelineTurnRequest(data);
     const env = workerEnv();
     const sessionRuntime = env.SESSION_RUNTIME;

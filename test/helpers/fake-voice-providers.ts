@@ -1,28 +1,25 @@
 /**
  * Fake voice providers — the fetch harness for the voice-pipeline tests.
  *
- * ALL provider wire knowledge (OpenAI URLs + response shapes, the `instructions`-substring
- * routing, AND the Flue workflow-path routing over the REASONING binding) is quarantined in
+ * ALL provider wire knowledge (audio URLs + response shapes, the `instructions`-substring
+ * routing, and the reasoning-test routing) is quarantined in
  * THIS file. Tier-1 test bodies import only the domain-facing surface
  * (`installVoiceProviders`, `VoiceProviderFakeConfig`, `CallLog`) and never name a URL, a
- * wire shape, an OpenAI token, or a workflow path. Swapping providers later means rewriting
+ * wire shape, a provider token, or a workflow path. Swapping providers later means rewriting
  * this layer only.
  *
  * The five named slots are transport-agnostic — they name a *reasoning/audio role*, not a
  * wire. Each slot can be served by either transport:
  *   transcribe  → POST /v1/audio/transcriptions  (FormData body)           [fetch only]
- *   gateChecker → POST /v1/responses (instructions ⊃ "comprehension-gate checker")
- *                 OR  POST /workflows/gate-check?wait=result                [binding]
- *   verifier    → POST /v1/responses (instructions ⊃ "narrow answer verifier")
- *                 OR  POST /workflows/verifier?wait=result                  [binding]
- *   tutor       → POST /v1/responses  (neither marker — the else branch)
- *                 OR  POST /workflows/tutor-turn?wait=result                [binding]
+ *   gateChecker → reasoning payload stage "gate-check"
+ *   verifier    → reasoning payload stage "verifier"
+ *   tutor       → reasoning payload stage "tutor-turn"
  *   tts         → POST /v1/audio/speech                                     [fetch only]
  *
  * Two routers, one per transport, both write to the SAME slot counters — so a Tier-1 test
  * asserts the same `counts.gateChecker` and `tutorBodies()` regardless of which transport
- * a migrated stage used. `routeVoiceProviderCall` routes the OpenAI fetch transport;
- * `routeReasoningWorkflowCall` routes the REASONING binding transport.
+ * a migrated stage used. `routeVoiceProviderCall` routes the audio fetch transport;
+ * the reasoning transport records payload stages directly.
  *
  * The matcher precedence within `/responses` (gateChecker → verifier → tutor-else) is
  * load-bearing and is pinned in `test/adapters/voice-provider-router.test.ts`.
@@ -30,32 +27,14 @@
 
 import assert from "node:assert/strict";
 
+import { HttpError, type JsonValue } from "../../src/core/http-error.js";
+import type {
+  ReasoningTestTransport,
+  ReasoningWorkflowPayload
+} from "../../src/providers/reasoning/reasoning-binding.js";
+
 /** The five slots a voice-pipeline turn can hit. */
 export type VoiceProviderSlot = "transcribe" | "gateChecker" | "verifier" | "tutor" | "tts";
-
-/** Workflow path → slot, for the REASONING binding transport (Phase 2+ migration). */
-const reasoningWorkflowSlots: Record<string, VoiceProviderSlot> = {
-  "gate-check": "gateChecker",
-  verifier: "verifier",
-  "tutor-turn": "tutor"
-};
-
-/**
- * Routes a captured REASONING-binding call to its slot, or null if it isn't a reasoning
- * workflow call. The path is `/workflows/<stage>`; the slot is derived from the stage
- * name. This is the transport-aware counterpart to `routeVoiceProviderCall` — the two
- * never overlap (a binding fetch hits `/workflows/*`, an OpenAI fetch hits `/responses`).
- *
- * Exported (and unit-tested) so the binding routing can't drift silently.
- */
-export function routeReasoningWorkflowCall(input: RequestInfo | URL): VoiceProviderSlot | null {
-  const url = String(input);
-  const match = url.match(/\/workflows\/([^/?]+)/);
-  if (!match) {
-    return null;
-  }
-  return reasoningWorkflowSlots[match[1]] ?? null;
-}
 
 /**
  * Routes a captured OpenAI-wire fetch call to its slot, or null if it isn't a
@@ -167,16 +146,6 @@ export type VoiceProviderFakeConfig = {
   verifier?: VerifierSlot;
   tutor?: TutorSlot;
   tts?: TtsSlot;
-  /**
-   * When truthy, the REASONING binding fake is exposed as `fake.reasoning` for the test
-   * to install on `env.REASONING`, and migrated stages are expected to arrive over the
-   * binding (`/workflows/*`) rather than `globalThis.fetch` (`/responses`). A slot
-   * configured under `gateChecker`/`verifier`/`tutor` is served from whichever transport
-   * actually calls — so a Tier-1 test body does not change when a stage flips transports.
-   * Set this in the binding-path tests (Phase 2+); the default (undefined) keeps the
-   * legacy OpenAI-fetch transport.
-   */
-  reasoning?: true;
 };
 
 /** The captured call log. Domain-facing: no wire tokens (`url`/`init` stay internal). */
@@ -186,8 +155,8 @@ export type CallLog = {
   /**
    * The full prompt the tutor model received, one string per tutor call. Over the
    * OpenAI-fetch transport this is the request body (`instructions` + `input`); over the
-   * REASONING-binding transport it is the workflow payload's `input` (which carries the
-   * same scrubbed prompt — see docs/adr/0001-flue-reasoning-worker.md). Tests match
+   * reasoning transport it is the payload's `input` (which carries the same scrubbed prompt).
+   * Tests match
    * against substrings ("separate verifier already graded", absence of "expectedAnswers").
    *
    * TRIPWIRE: this string includes the request envelope (keys like `instructions`,
@@ -200,9 +169,7 @@ export type CallLog = {
   /** The `input` text sent to each TTS call (what the tutor will speak aloud). */
   ttsInputs(): string[];
   /**
-   * The workflow `input` strings sent to a given reasoning slot over the REASONING binding
-   * (gate/verifier/tutor), in call order. Empty for slots that were never called or that
-   * only ran over the OpenAI-fetch transport. Tier-2 tests assert on prompt content here.
+   * The workflow `input` strings sent to a given reasoning slot, in call order.
    */
   workflowInputs(slot: VoiceProviderSlot): string[];
 };
@@ -213,11 +180,8 @@ export type VoiceProviderFake = {
   /** Restores the original `fetch`. Always called in `afterEach`. */
   restore(): void;
   readonly calls: CallLog;
-  /**
-   * A Fetcher fake for the REASONING service binding. Install on `env.REASONING` in
-   * binding-path tests. Absent unless `config.reasoning === true`.
-   */
-  readonly reasoning?: Fetcher;
+  /** In-app reasoning executor fake. Install on `env.REASONING_TEST_TRANSPORT`. */
+  readonly reasoningTransport: ReasoningTestTransport;
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -281,70 +245,58 @@ function encodeTtsResponse(slot: TtsSlot): Response {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// REASONING-binding transport encoding (Tier 2 — the ONLY place the workflow shapes exist)
+// Legacy REASONING-binding transport encoding (Tier 2).
 //
-// Worker B is a Flue worker. Its `?wait=result` response does NOT return the workflow output
-// bare — Flue wraps it in an envelope `{ result, runId, streamUrl, offset }` (see
-// @flue/runtime runSyncMode/runDirectSyncMode), and `runReasoningWorkflow` unwraps `.result`.
-// So the encoder must wrap the domain result the same way, or the tests would exercise a wire
-// shape the real worker never sends. A gate-check result is `{ accepted, notes }`, a verifier
-// result is `{ studentStatus, confidence, … }`, a tutor result is the action — each wrapped in
-// the Flue envelope by `workflowEnvelope`. The domain values mirror the OpenAI-wire encoder, so
-// a slot configured once serves whichever transport calls.
-// ──────────────────────────────────────────────────────────────────────────────
-
-/** Wraps a workflow result in Flue's `?wait=result` envelope, matching the real Worker B wire. */
-function workflowEnvelope(result: unknown): Response {
-  return Response.json({ result, runId: "test-run", streamUrl: "runs/test-run", offset: "-1" });
-}
-
-function encodeGateCheckerWorkflowResult(slot: GateCheckerSlot): Response {
+function gateCheckerWorkflowResult(slot: GateCheckerSlot): JsonValue {
   if ("status" in slot) {
-    return new Response("upstream error", { status: slot.status });
+    throw new HttpError(502, `Reasoning workflow "gate-check" failed: upstream error`, {
+      status: slot.status
+    });
   }
   if ("emptyBody" in slot) {
-    return new Response(null, { status: 204 });
+    return {};
   }
-  return workflowEnvelope({ accepted: slot.accepted, notes: slot.notes ?? null });
+  return { accepted: slot.accepted, notes: slot.notes ?? null };
 }
 
-function encodeVerifierWorkflowResult(slot: VerifierSlot): Response {
+function verifierWorkflowResult(slot: VerifierSlot): JsonValue {
   if ("status" in slot) {
-    return new Response("upstream error", { status: slot.status });
+    throw new HttpError(502, `Reasoning workflow "verifier" failed: upstream error`, {
+      status: slot.status
+    });
   }
   if ("emptyBody" in slot) {
-    return new Response(null, { status: 204 });
+    return {};
   }
-  return workflowEnvelope({
+  return {
     confidence: slot.confidence ?? "high",
     correctionHint: slot.correctionHint ?? null,
     misconceptionKey: slot.misconceptionKey ?? null,
     studentStatus: slot.studentStatus
-  });
+  };
 }
 
-function encodeTutorWorkflowResult(attempt: FakeTutorAttempt): Response {
-  // `emptyBody`/`malformedBody` are response-shape failures that kill the turn, mirrored
-  // from the OpenAI transport (an empty 204 / a non-JSON body that the parser rejects).
+function tutorWorkflowResult(attempt: FakeTutorAttempt): JsonValue {
   if (attempt.kind === "emptyBody") {
-    return new Response(null, { status: 204 });
+    throw new HttpError(502, `Reasoning workflow "tutor-turn" returned no structured output.`);
   }
   if (attempt.kind === "malformedBody") {
-    return new Response(attempt.text, { status: 200, headers: { "Content-Type": "text/plain" } });
+    throw new HttpError(502, `Reasoning workflow "tutor-turn" returned invalid structured output.`);
   }
   const action = attempt.kind === "legal" || attempt.kind === undefined ? attempt : attempt.action;
-  return workflowEnvelope(action);
+  return action as JsonValue;
 }
 
-function decodeWorkflowInput(body: BodyInit | null | undefined): string {
-  if (typeof body !== "string") {
-    return "";
-  }
-  try {
-    const parsed = JSON.parse(body) as { input?: unknown };
-    return typeof parsed.input === "string" ? parsed.input : "";
-  } catch {
-    return "";
+function slotForReasoningPayload(payload: ReasoningWorkflowPayload): VoiceProviderSlot | null {
+  switch (payload.stage) {
+    case "gate-check":
+      return "gateChecker";
+    case "verifier":
+      return "verifier";
+    case "tutor-turn":
+      return "tutor";
+    case "extract-question":
+      return null;
   }
 }
 
@@ -372,10 +324,10 @@ export function makeOpenAiProviderFake(config: VoiceProviderFakeConfig): VoicePr
   let tutorIndex = 0;
 
   // Both transports record into the SAME counters and body log so Tier-1 assertions are
-  // transport-agnostic. `rawCalls` holds the OpenAI-fetch captures; `bindingCalls` holds
-  // the REASONING-binding captures.
+  // transport-agnostic. `rawCalls` holds STT/TTS fetch captures; `reasoningCalls` holds
+  // in-app reasoning payloads.
   const rawCalls: { url: string; init?: RequestInit }[] = [];
-  const bindingCalls: { url: string; init?: RequestInit }[] = [];
+  const reasoningCalls: ReasoningWorkflowPayload[] = [];
   const countBySlot: Record<VoiceProviderSlot, number> = {
     transcribe: 0,
     gateChecker: 0,
@@ -419,38 +371,31 @@ export function makeOpenAiProviderFake(config: VoiceProviderFakeConfig): VoicePr
     throw new Error(`fake-voice-providers: unmatched fetch ${url}`);
   }) as typeof fetch;
 
-  // The REASONING-binding transport. Routes `/workflows/<stage>` → slot and serves the
-  // SAME slot config as the fetch transport, encoded as the workflow `result`. Counted
-  // into the same per-slot counters; tutor inputs captured for `tutorBodies()`.
-  const fakeReasoningFetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const slot = routeReasoningWorkflowCall(input);
-    const url = String(input);
-    bindingCalls.push({ url, init });
-    if (slot) {
-      countBySlot[slot] += 1;
-    }
+  const reasoningTransport: ReasoningTestTransport = {
+    async runReasoningWorkflow(payload) {
+      const slot = slotForReasoningPayload(payload);
+      reasoningCalls.push(payload);
+      if (slot) {
+        countBySlot[slot] += 1;
+      }
 
-    if (slot === "gateChecker") {
-      assert.ok(config.gateChecker, "gateChecker binding call made but no gateChecker slot configured");
-      return encodeGateCheckerWorkflowResult(config.gateChecker);
-    }
-    if (slot === "verifier") {
-      assert.ok(config.verifier, "verifier binding call made but no verifier slot configured");
-      return encodeVerifierWorkflowResult(config.verifier);
-    }
-    if (slot === "tutor") {
-      const attempt = tutorAttempts[Math.min(tutorIndex, tutorAttempts.length - 1)];
-      tutorIndex += 1;
-      return encodeTutorWorkflowResult(attempt);
-    }
+      if (slot === "gateChecker") {
+        assert.ok(config.gateChecker, "gateChecker reasoning call made but no gateChecker slot configured");
+        return gateCheckerWorkflowResult(config.gateChecker);
+      }
+      if (slot === "verifier") {
+        assert.ok(config.verifier, "verifier reasoning call made but no verifier slot configured");
+        return verifierWorkflowResult(config.verifier);
+      }
+      if (slot === "tutor") {
+        const attempt = tutorAttempts[Math.min(tutorIndex, tutorAttempts.length - 1)];
+        tutorIndex += 1;
+        return tutorWorkflowResult(attempt);
+      }
 
-    throw new Error(`fake-voice-providers: unmatched REASONING fetch ${url}`);
-  }) as Fetcher["fetch"];
-
-  // The REASONING binding is ALWAYS exposed now that the binding is the sole reasoning
-  // transport (the legacy direct-OpenAI path was removed in Phase 4). The `config.reasoning`
-  // flag is accepted for back-compat but no longer gates availability.
-  const reasoningBinding: Fetcher = { fetch: fakeReasoningFetch } as Fetcher;
+      throw new Error(`fake-voice-providers: unmatched reasoning stage ${payload.stage}`);
+    }
+  };
 
   const calls: CallLog = {
     counts: countBySlot,
@@ -460,12 +405,10 @@ export function makeOpenAiProviderFake(config: VoiceProviderFakeConfig): VoicePr
       const fetchBodies = rawCalls
         .filter((captured) => routeVoiceProviderCall(captured.url, captured.init) === "tutor")
         .map((captured) => (captured.init?.body !== undefined ? String(captured.init.body) : ""));
-      // The REASONING-binding transport: the body is the workflow payload `{ input }`,
-      // whose `input` carries the same scrubbed prompt (instructions + user content).
-      const bindingBodies = bindingCalls
-        .filter((captured) => routeReasoningWorkflowCall(captured.url) === "tutor")
-        .map((captured) => decodeWorkflowInput(captured.init?.body));
-      return [...fetchBodies, ...bindingBodies];
+      const reasoningBodies = reasoningCalls
+        .filter((captured) => slotForReasoningPayload(captured) === "tutor")
+        .map((captured) => captured.input);
+      return [...fetchBodies, ...reasoningBodies];
     },
     ttsInputs() {
       const inputs: string[] = [];
@@ -485,9 +428,9 @@ export function makeOpenAiProviderFake(config: VoiceProviderFakeConfig): VoicePr
       return inputs;
     },
     workflowInputs(slot: VoiceProviderSlot): string[] {
-      return bindingCalls
-        .filter((captured) => routeReasoningWorkflowCall(captured.url) === slot)
-        .map((captured) => decodeWorkflowInput(captured.init?.body));
+      return reasoningCalls
+        .filter((captured) => slotForReasoningPayload(captured) === slot)
+        .map((captured) => captured.input);
     }
   };
 
@@ -499,32 +442,24 @@ export function makeOpenAiProviderFake(config: VoiceProviderFakeConfig): VoicePr
       }
       originalFetch = globalThis.fetch;
       globalThis.fetch = fakeFetch;
-      activeReasoningBinding = reasoningBinding;
+      activeReasoningTransport = reasoningTransport;
     },
     restore() {
       if (originalFetch !== null) {
         globalThis.fetch = originalFetch;
         originalFetch = null;
-        activeReasoningBinding = null;
+        activeReasoningTransport = null;
       }
     },
     calls,
-    get reasoning() {
-      return reasoningBinding;
-    }
+    reasoningTransport
   };
 }
 
-/**
- * The REASONING binding of the currently-installed fake, or undefined when none is
- * installed. Voice/extraction test fixtures read this lazily (`get REASONING()`) so their
- * env object points at whichever fake a given test installed — without the fixture having
- * to know about the harness's per-test lifecycle.
- */
-let activeReasoningBinding: Fetcher | null = null;
+let activeReasoningTransport: ReasoningTestTransport | null = null;
 
-export function currentReasoningBinding(): Fetcher | undefined {
-  return activeReasoningBinding ?? undefined;
+export function currentReasoningTransport(): ReasoningTestTransport | undefined {
+  return activeReasoningTransport ?? undefined;
 }
 
 /**

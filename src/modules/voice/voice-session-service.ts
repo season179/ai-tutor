@@ -30,10 +30,10 @@ export type VoiceSessionServiceEnv = VoicePipelineServiceEnv;
 export const defaultVoiceBackend = voiceBackend;
 
 /**
- * The single voice session service. The turn-based OpenAI pipeline is the only
- * backend, so there is no switch to read or validate — `createVoiceSessionService`
- * always returns the pipeline service. (The old `VOICE_BACKEND` var and its
- * `readVoiceBackend` validation were retired with the realtime/LiveKit arms.)
+ * The single voice session service. The turn-based voice pipeline is the only backend,
+ * so there is no switch to read or validate — `createVoiceSessionService` always returns
+ * the pipeline service. (The old `VOICE_BACKEND` var and its `readVoiceBackend`
+ * validation were retired with the realtime/LiveKit arms.)
  *
  * Now async: it loads the provider/model settings snapshot from D1 so the session
  * descriptor (which advertises the models to the client) reflects the current

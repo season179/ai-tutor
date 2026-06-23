@@ -11,10 +11,13 @@ import { useSettings } from "../../hooks/use-settings.js";
 import {
   PROVIDERS,
   isModelSettingType,
+  isReasoningModelSettingType,
   type Provider,
   type ProviderModelSetting,
   type ProviderSettings,
   type ProviderSettingsPatch,
+  type SettingsModelOption,
+  type SettingsModelOptions,
   type SettingType
 } from "../../../modules/settings/settings-types.js";
 import { classNames } from "../../lib/class-names.js";
@@ -46,7 +49,7 @@ const REASONING_FIELDS = SETTING_FIELDS.filter((f) => f.group === "Reasoning");
 
 /**
  * The provider/model settings page. Reads the global settings snapshot, lets a signed-in
- * user edit any field as free text (the point is testing arbitrary models quickly), and
+ * user edit audio fields as free text and reasoning fields from supported-model dropdowns, and
  * saves the edited subset on explicit Save. Fields are controlled locally and seeded from
  * the query, so flipping several models then one Save is a single write.
  *
@@ -55,7 +58,17 @@ const REASONING_FIELDS = SETTING_FIELDS.filter((f) => f.group === "Reasoning");
  */
 export function SettingsPage() {
   const { isAuthLoading, authError, signInWithGoogle, isAdmin } = useAuth();
-  const { settings, isLoading, loadError, save, saveState, isSaving } = useSettings();
+  const {
+    settings,
+    modelOptions,
+    isLoading,
+    isModelOptionsLoading,
+    loadError,
+    modelOptionsError,
+    save,
+    saveState,
+    isSaving
+  } = useSettings();
   // Local draft state, seeded from the query snapshot. `settingsVersion` invalidates the
   // draft when a fresh snapshot arrives (initial load or an external mutation).
   const [draft, setDraft] = useState<ProviderSettings>(emptyDraft);
@@ -144,9 +157,12 @@ export function SettingsPage() {
         />
         <SettingsSection
           title="Reasoning"
-          description="Per-stage LLM models. Each ships across the REASONING binding as a per-call model override."
+          description="Per-stage LLM models. Each is sent to the in-app reasoning executor per call."
           fields={REASONING_FIELDS}
           draft={draft}
+          modelOptions={modelOptions}
+          modelOptionsError={modelOptionsError}
+          modelOptionsLoading={isModelOptionsLoading}
           settingsVersion={settingsVersion}
           disabled={isSaving}
           onFieldChange={updateField}
@@ -168,6 +184,9 @@ function SettingsSection({
   description,
   fields,
   draft,
+  modelOptions,
+  modelOptionsError,
+  modelOptionsLoading = false,
   settingsVersion,
   disabled,
   onFieldChange
@@ -176,6 +195,9 @@ function SettingsSection({
   description: string;
   fields: ReadonlyArray<{ type: SettingType; label: string; hint: string }>;
   draft: ProviderSettings;
+  modelOptions?: SettingsModelOptions | undefined;
+  modelOptionsError?: unknown;
+  modelOptionsLoading?: boolean;
   settingsVersion: number;
   disabled: boolean;
   onFieldChange: <T extends SettingType>(type: T, value: ProviderSettings[T]) => void;
@@ -191,6 +213,10 @@ function SettingsSection({
               key={field.type}
               field={field}
               value={draft[field.type]}
+              options={modelOptionsForField(modelOptions, field.type)}
+              optionsError={isReasoningModelSettingType(field.type) ? modelOptionsError : null}
+              optionsLoading={isReasoningModelSettingType(field.type) && modelOptionsLoading}
+              useCatalog={isReasoningModelSettingType(field.type)}
               settingsVersion={settingsVersion}
               disabled={disabled}
               onChange={(value) => onFieldChange(field.type, value)}
@@ -218,22 +244,46 @@ function SettingsSection({
 }
 
 /**
- * A model field: provider dropdown + free-text model name. The draft stores the split
- * provider/model object directly, so save/diff/store all share one shape.
+ * A model field. Audio fields keep the provider dropdown + free-text model input; reasoning
+ * fields use the local supported-model registry so the saved provider/model pair is always
+ * supported.
  */
 function ModelField({
   field,
   value,
+  options,
+  optionsError,
+  optionsLoading,
+  useCatalog,
   settingsVersion,
   disabled,
   onChange
 }: {
   field: { type: SettingType; label: string; hint: string };
   value: ProviderModelSetting;
+  options?: readonly SettingsModelOption[] | undefined;
+  optionsError?: unknown;
+  optionsLoading: boolean;
+  useCatalog: boolean;
   settingsVersion: number;
   disabled: boolean;
   onChange: (value: ProviderModelSetting) => void;
 }) {
+  if (useCatalog) {
+    return (
+      <CatalogModelField
+        field={field}
+        value={value}
+        options={options}
+        optionsError={optionsError}
+        optionsLoading={optionsLoading}
+        settingsVersion={settingsVersion}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+
   return (
     <div key={field.type} className="settings-field">
       <span className="settings-field-label">{field.label}</span>
@@ -266,6 +316,104 @@ function ModelField({
       <span className="settings-field-hint">{field.hint}</span>
     </div>
   );
+}
+
+function CatalogModelField({
+  field,
+  value,
+  options,
+  optionsError,
+  optionsLoading,
+  settingsVersion,
+  disabled,
+  onChange
+}: {
+  field: { type: SettingType; label: string; hint: string };
+  value: ProviderModelSetting;
+  options?: readonly SettingsModelOption[] | undefined;
+  optionsError?: unknown;
+  optionsLoading: boolean;
+  settingsVersion: number;
+  disabled: boolean;
+  onChange: (value: ProviderModelSetting) => void;
+}) {
+  const catalogUnavailable = optionsLoading || Boolean(optionsError) || !options;
+  const providerOptions = options ? withCurrentProvider(uniqueProviders(options), value.provider) : [value.provider];
+  const modelsForProvider = options?.filter((option) => option.provider === value.provider) ?? [];
+  const currentModelSupported = modelsForProvider.some((option) => option.model === value.model);
+  const fieldDisabled = disabled || catalogUnavailable;
+  const hint = optionsError
+    ? "Could not load reasoning model options."
+    : optionsLoading
+      ? "Loading reasoning model options."
+      : currentModelSupported
+        ? field.hint
+        : `${field.hint} Current value is not in the supported reasoning model list.`;
+
+  function handleProviderChange(provider: Provider): void {
+    const nextModel = options?.find((option) => option.provider === provider)?.model ?? "";
+    onChange({ provider, model: nextModel });
+  }
+
+  return (
+    <div key={field.type} className="settings-field">
+      <span className="settings-field-label">{field.label}</span>
+      <div className="settings-model-row">
+        <select
+          key={`${field.type}-provider-${settingsVersion}`}
+          className="settings-provider-select"
+          value={value.provider}
+          disabled={fieldDisabled}
+          onChange={(e) => handleProviderChange(e.target.value as Provider)}
+        >
+          {providerOptions.map((provider) => (
+            <option key={provider} value={provider}>
+              {provider}
+            </option>
+          ))}
+        </select>
+        <select
+          key={`${field.type}-model-${settingsVersion}`}
+          className="settings-field-input settings-model-select"
+          value={value.model}
+          disabled={fieldDisabled || modelsForProvider.length === 0}
+          onChange={(e) => onChange({ ...value, model: e.target.value })}
+        >
+          {!currentModelSupported && value.model ? (
+            <option value={value.model}>{value.model} (unsupported)</option>
+          ) : null}
+          {modelsForProvider.map((option) => (
+            <option key={`${option.provider}/${option.model}`} value={option.model}>
+              {option.label}
+            </option>
+          ))}
+          {optionsLoading ? <option value={value.model}>Loading models...</option> : null}
+        </select>
+      </div>
+      <span className={classNames("settings-field-hint", Boolean(optionsError) && "settings-field-hint--error")}>
+        {hint}
+      </span>
+    </div>
+  );
+}
+
+function modelOptionsForField(
+  modelOptions: SettingsModelOptions | undefined,
+  type: SettingType
+): readonly SettingsModelOption[] | undefined {
+  return isReasoningModelSettingType(type) ? modelOptions?.reasoning[type] : undefined;
+}
+
+function uniqueProviders(options: readonly SettingsModelOption[]): Provider[] {
+  const providers = new Set<Provider>();
+  for (const option of options) {
+    providers.add(option.provider);
+  }
+  return [...providers];
+}
+
+function withCurrentProvider(providers: Provider[], current: Provider): Provider[] {
+  return providers.includes(current) ? providers : [current, ...providers];
 }
 
 function SaveStatus({ state }: { state: ReturnType<typeof useSettings>["saveState"] }) {

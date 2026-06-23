@@ -7,6 +7,7 @@ import {
   frameContainsComputedSolution,
   problemTypes,
   scrubComputedSolutionFromFrame,
+  augmentProblemQuantities,
   type ProblemFrame,
   type ProblemQuantity,
   type ProblemType
@@ -21,7 +22,11 @@ export type QuestionExtractionServiceEnv = ReasoningEnv;
 const extractionInstructions = `Extract the homework problem *frame* from this image — what is given and what the student must find.
 
 "question" is the load-bearing field. It MUST be the COMPLETE, self-contained problem statement, transcribed verbatim from the image — everything a student must read to solve the problem. For word problems the givens are usually embedded in the prose, so include every setup sentence leading up to AND the final question being asked. A student reading only "question" must have everything needed to solve it — never put just the final interrogative sentence there.
-"quantities" and "relationships" are supplementary structured metadata that summarize the givens; they do not replace the full prose in "question".
+"quantities" and "relationships" are structured metadata that summarize the givens; they do not replace the full prose in "question".
+For "quantities", include EVERY visible given number, currency amount, rate, count, measurement, percentage, and unit price. Each item needs:
+- "raw": the exact visible quantity text, preserving units/currency and spacing when readable (for example "RM70 000", "RM54 000", "RM1 980").
+- "label": what that quantity means in the problem's language (for example "捐款总额", "图书馆拨款", "科学仪器单价").
+- "unit": the unit/currency when obvious, otherwise null.
 
 Never include a computed final answer, solved value, or arithmetic result in any field — only what the problem asks the student to find.
 If multiple complete problems exist, return the first complete one and set outcome to multiple_questions.
@@ -51,6 +56,7 @@ type RawExtractionPayload = {
 
 export function buildProblemFrame(payload: RawExtractionPayload): ProblemFrame {
   const visibleQuestion = payload.question.trim() || payload.extractedText.trim();
+  const sourceText = [payload.extractedText, visibleQuestion].filter(Boolean).join("\n");
 
   return {
     diagramDescription: payload.diagramDescription?.trim() || null,
@@ -58,7 +64,7 @@ export function buildProblemFrame(payload: RawExtractionPayload): ProblemFrame {
     languageIsSubject: payload.languageIsSubject,
     likelySkillKeys: payload.likelySkillKeys,
     problemType: payload.problemType,
-    quantities: payload.quantities,
+    quantities: augmentProblemQuantities(payload.quantities, sourceText),
     relationships: payload.relationships,
     taskLanguage: payload.taskLanguage.trim() || "en",
     unknownTarget: payload.unknownTarget?.trim() || null,
@@ -118,11 +124,10 @@ export async function extractQuestionFromImageUrl(
   observability?: ObservabilityContext
 ): Promise<ExtractQuestionResponse> {
   // The extraction instructions cross as the workflow `input`, the presigned image URL as
-  // `imageUrl` (Worker B fetches the bytes and attaches them as a vision image). When
-  // `settings` is provided, the extract-question stage's model is shipped in `extra.model`,
-  // overriding Worker B's env default for this call; otherwise Worker B falls back to its
-  // env model. A binding failure propagates as HttpError(502) — extraction is NOT fail-soft
-  // (it runs at session creation, outside the turn loop).
+  // `imageUrl` (the reasoning executor fetches the bytes and attaches them as a vision
+  // image). When `settings` is provided, the extract-question stage's model is shipped in
+  // `extra.model`. A model failure propagates as HttpError(502) — extraction is NOT
+  // fail-soft (it runs at session creation, outside the turn loop).
   const result = await runReasoningWorkflow(
     "extract-question",
     extractionInstructions,
@@ -136,7 +141,7 @@ export async function extractQuestionFromImageUrl(
   } catch (error) {
     throw new HttpError(
       502,
-      "Extraction binding result did not match the extraction shape.",
+      "Extraction reasoning result did not match the extraction shape.",
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -187,8 +192,8 @@ function parseExtractQuestionResponse(value: JsonValue): RawExtractionPayload {
     throw new Error("Extraction payload extractedText was invalid.");
   }
 
-  // problemType is supplementary metadata — the load-bearing field is `question` — and Worker B
-  // now enforces this enum with a picklist. As defense in depth against contract drift (and so a
+  // problemType is supplementary metadata — the load-bearing field is `question` — and the
+  // reasoning schema enforces this enum. As defense in depth against contract drift (and so a
   // provider that doesn't honor the structured-output enum can't sink the whole upload), an
   // unrecognized value degrades to "other" — the established default (see defaultProblemFrame) —
   // rather than throwing the way a missing load-bearing field does.

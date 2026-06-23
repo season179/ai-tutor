@@ -22,6 +22,7 @@ import {
   type WorkflowRouteHandler
 } from "@flue/runtime";
 import * as v from "valibot";
+import { tutorThinkingLevel } from "../reasoning-levels.js";
 
 export const route: WorkflowRouteHandler = async (_context, next) => next();
 
@@ -30,9 +31,10 @@ export const route: WorkflowRouteHandler = async (_context, next) => next();
 // spoken reply is hot-swappable independently of the gate/verifier/extraction models. It
 // falls back to REASONING_MODEL (the shared default) when TUTOR_MODEL is unset, so a
 // deployment that wants all four stages on one model sets only REASONING_MODEL.
-const tutor = createAgent(() => ({
-  model: process.env.TUTOR_MODEL ?? process.env.REASONING_MODEL ?? "openai/gpt-5.5"
-}));
+const tutor = createAgent(() => {
+  const model = process.env.TUTOR_MODEL ?? process.env.REASONING_MODEL ?? "openai/gpt-5.5";
+  return { model, thinkingLevel: tutorThinkingLevel(model) };
+});
 
 // The shared structured-output contract. Mirrors the OpenAI proposedTutorActionJsonSchema
 // so Worker A's proposedTutorActionFromJson sees the same shape. `move`/`nextPhase` are
@@ -62,9 +64,14 @@ export type TutorTurnPayload = {
 export async function run({ init, payload }: FlueContext<TutorTurnPayload>) {
   const harness = await init(tutor);
   const session = await harness.session();
+  const model = payload.model ?? process.env.TUTOR_MODEL ?? process.env.REASONING_MODEL ?? "openai/gpt-5.5";
 
   const response = await session.prompt(payload.input, {
     result: tutorTurnResult,
+    // Tutor turns are latency-sensitive and already constrained by schema; extra model
+    // thinking was generating thousands of hidden tokens before a short spoken reply.
+    // Some reasoning endpoints reject "off", so use the lowest portable level.
+    thinkingLevel: tutorThinkingLevel(model),
     ...(payload.model ? { model: payload.model } : {}),
     ...(payload.image ? { images: [payload.image] } : {})
   });

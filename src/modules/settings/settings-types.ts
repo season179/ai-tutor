@@ -6,8 +6,8 @@
  * Model rows store provider and model separately: `provider` is routing/UI metadata, while
  * `value` is the bare model string each downstream consumer can format for its own wire.
  *
- * Worker A owns the model strings (read from here); provider credentials stay as Wrangler
- * secrets. See `settings-store.ts` and AGENTS.md "Two-worker architecture".
+ * The app worker owns the model strings (read from here); provider credentials stay as
+ * Wrangler secrets. See `settings-store.ts`.
  */
 
 /** The known provider/model setting keys. Adding a slot = extend this union + seed a row. */
@@ -16,7 +16,7 @@ export type SettingType =
   | "stt_model"
   | "tts_model"
   | "tts_voice"
-  // Reasoning stages (shipped across the REASONING binding as a per-call model override)
+  // Reasoning stages (sent to the in-app reasoning executor as a per-call model override)
   | "gate_check_model"
   | "verifier_model"
   | "tutor_model"
@@ -51,12 +51,37 @@ export const MODEL_SETTING_TYPES: readonly ModelSettingType[] = [
   "extract_model"
 ];
 
+export const REASONING_MODEL_SETTING_TYPES = [
+  "gate_check_model",
+  "verifier_model",
+  "tutor_model",
+  "extract_model"
+] as const satisfies readonly ModelSettingType[];
+
+export type ReasoningModelSettingType = (typeof REASONING_MODEL_SETTING_TYPES)[number];
+
+export type SettingsModelOption = {
+  provider: Provider;
+  model: string;
+  label: string;
+  input: readonly string[];
+  reasoning: boolean;
+};
+
+export type SettingsModelOptions = {
+  reasoning: Record<ReasoningModelSettingType, SettingsModelOption[]>;
+};
+
 export function isProvider(value: string): value is Provider {
   return (PROVIDERS as readonly string[]).includes(value);
 }
 
 export function isModelSettingType(type: SettingType): type is ModelSettingType {
   return (MODEL_SETTING_TYPES as readonly SettingType[]).includes(type);
+}
+
+export function isReasoningModelSettingType(type: SettingType): type is ReasoningModelSettingType {
+  return (REASONING_MODEL_SETTING_TYPES as readonly SettingType[]).includes(type);
 }
 
 /**
@@ -80,9 +105,9 @@ export function splitProviderModelSpecifier(
 
 /**
  * Formats a split model setting for runtimes that expect a provider/model specifier.
- * Flue/Pi use this shape and resolve the provider before handing the bare model to the
- * provider implementation. Audio does not use this helper because OpenRouter's audio REST
- * endpoints want the bare `model` field.
+ * The reasoning executor uses this shape to choose a provider adapter before handing the
+ * bare model to the provider implementation. Audio does not use this helper because
+ * OpenRouter's audio REST endpoints want the bare `model` field.
  */
 export function providerModelSpecifier(setting: ProviderModelSetting): string {
   const model = setting.model.trim();
@@ -111,7 +136,7 @@ export type ProviderSettings = Record<ModelSettingType, ProviderModelSetting> & 
 /** A partial map of setting type → value, as accepted by `saveSettings`. */
 export type ProviderSettingsPatch = Partial<ProviderSettings>;
 
-/** The reasoning stages Worker B exposes as Flue workflows (workflow filename). */
+/** The reasoning stages the app worker executes through TanStack AI. */
 export type ReasoningStage = "gate-check" | "verifier" | "tutor-turn" | "extract-question";
 
 /** Maps each reasoning stage to the settings key that holds its model. */
@@ -123,10 +148,8 @@ export const STAGE_TO_SETTING: Record<ReasoningStage, ModelSettingType> = {
 };
 
 /**
- * Builds the `extra` payload field that ships a stage's model across the REASONING binding.
- * `runReasoningWorkflow` merges `extra` into the Flue workflow payload; Worker B forwards
- * `payload.model` into `session.prompt({ model })`. Returns an empty object when the model is
- * empty so we never override Worker B's env default with a blank.
+ * Builds the `extra` payload field that ships a stage's model into the reasoning executor.
+ * Returns an empty object when the model is empty so we fall back to the stage default.
  */
 export function modelExtraForStage(
   settings: ProviderSettings,

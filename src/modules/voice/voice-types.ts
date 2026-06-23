@@ -4,10 +4,9 @@ export const maxVoiceTurnBodyBytes = 8_000_000;
 
 export const defaultImagePrompt = "Help me understand this problem step by step.";
 
-// The voice backend is single-valued: the turn-based OpenAI pipeline is the only
-// backend, kept as a literal (not a union) so a dead config switch can't rot in
-// place. The realtime/WebRTC and LiveKit arms were removed in the Flue migration
-// plan's Phase 1; if a second backend returns, re-introduce a union here.
+// The voice backend is single-valued: the turn-based voice pipeline is the only backend,
+// kept as a literal (not a union) so a dead config switch can't rot in place. If a second
+// backend returns, re-introduce a union here.
 export const voiceBackend = "openai-voice-pipeline" as const;
 export type VoiceBackend = typeof voiceBackend;
 

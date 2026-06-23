@@ -12,12 +12,12 @@
  * separate verifier's job (M4). See `docs/build-plan.md`.
  */
 
-import type { ProposedTutorAction, SessionPhase } from "./tutor-action.js";
-import { allowedMoves, forbiddenMoves } from "./phase-policy.js";
+import type { ComprehensionGateStatus, ProposedTutorAction, SessionPhase } from "./tutor-action.js";
+import { allowedMoves, allowedNextPhases, canTransition, forbiddenMoves } from "./phase-policy.js";
 
 export const maxSpokenWords = 32;
 
-export type ValidationContext = { phase: SessionPhase };
+export type ValidationContext = { gateStatus?: ComprehensionGateStatus | null; phase: SessionPhase };
 
 export type ValidationResult = { ok: true } | { ok: false; reasons: string[] };
 
@@ -65,6 +65,16 @@ export function validateTutorAction(
   } else if (!allowed.some((legal) => legal === action.move)) {
     reasons.push(
       `move "${action.move}" is not allowed in phase "${phase}"; allowed moves are: ${allowed.join(", ")}`
+    );
+  }
+
+  const nextPhase = action.statePatch?.nextPhase;
+  if (nextPhase && !canTransition(phase, nextPhase, context.gateStatus)) {
+    reasons.push(
+      `nextPhase "${nextPhase}" is not allowed from phase "${phase}"; allowed nextPhase values are: ${allowedNextPhases(
+        phase,
+        context.gateStatus
+      ).join(", ")}`
     );
   }
 

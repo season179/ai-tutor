@@ -166,6 +166,69 @@ test("normalizeExtractionResponse preserves the full word-problem statement with
   assert.equal(normalized.frame.relationships.length, 1);
 });
 
+test("normalizeExtractionResponse infers visible quantities when structured extraction omits them", () => {
+  const fullStatement =
+    "智民小学获得 RM70 000 捐款。校长拨出 RM54 000 给图书馆，剩下的钱要购买单价是 RM1 980 的科学仪器。校长能够购买多少个科学仪器？";
+
+  const normalized = normalizeExtractionResponse({
+    confidence: "medium",
+    diagramDescription: null,
+    extractedText: fullStatement,
+    languageIsSubject: false,
+    likelySkillKeys: [],
+    notes: null,
+    outcome: "extracted",
+    problemType: "other",
+    quantities: [],
+    question: fullStatement,
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: fullStatement
+  });
+
+  assert.deepEqual(
+    normalized.frame.quantities.map((quantity) => quantity.raw),
+    ["RM70 000", "RM54 000", "RM1 980"]
+  );
+  assert.deepEqual(
+    normalized.frame.quantities.map((quantity) => quantity.unit),
+    ["RM", "RM", "RM"]
+  );
+  assert.match(normalized.frame.quantities[0]?.label ?? "", /捐款/);
+  assert.match(normalized.frame.quantities[1]?.label ?? "", /图书馆/);
+  assert.match(normalized.frame.quantities[2]?.label ?? "", /科学仪器.*单价|单价.*科学仪器/);
+});
+
+test("normalizeExtractionResponse preserves milliliter units when inferring quantities", () => {
+  const fullStatement =
+    "A bottle has 20 ml of medicine. Mina uses 5 ml each day. How many days will it last?";
+
+  const normalized = normalizeExtractionResponse({
+    confidence: "medium",
+    diagramDescription: null,
+    extractedText: fullStatement,
+    languageIsSubject: false,
+    likelySkillKeys: [],
+    notes: null,
+    outcome: "extracted",
+    problemType: "word_problem",
+    quantities: [],
+    question: fullStatement,
+    relationships: [],
+    taskLanguage: "en",
+    unknownTarget: "how many days the medicine will last"
+  });
+
+  assert.deepEqual(
+    normalized.frame.quantities.map((quantity) => quantity.raw),
+    ["20 ml", "5 ml"]
+  );
+  assert.deepEqual(
+    normalized.frame.quantities.map((quantity) => quantity.unit),
+    ["ml", "ml"]
+  );
+});
+
 test("buildProblemFrame lets the full question win over a fragmentary extractedText", () => {
   // The model sometimes returns a fragmentary extractedText (e.g. only the givens)
   // but a complete question. `question` is load-bearing: it must win so the full

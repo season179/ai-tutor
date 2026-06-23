@@ -8,7 +8,9 @@ import type { ProblemFrame } from "../src/modules/problems/problem-frame.ts";
 let fake: VoiceProviderFake | null = null;
 function env() {
   return {
-    REASONING: fake?.reasoning
+    OPENAI_API_KEY: "test-openai-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    REASONING_TEST_TRANSPORT: fake?.reasoningTransport
   };
 }
 afterEach(() => {
@@ -49,7 +51,7 @@ test("gradeStudentTurn returns null outside a grading turn", async () => {
 });
 
 test("gradeStudentTurn uses the deterministic track when there is a numeric answer key", async () => {
-  // No verifier slot configured: a binding call would assert-fail, proving the deterministic
+  // No verifier slot configured: a reasoning call would assert-fail, proving the deterministic
   // track graded the turn without reaching the model.
   fake = installVoiceProviders({});
   const step = deriveFirstCheckableStep(sharingFrame)!;

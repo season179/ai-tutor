@@ -66,7 +66,7 @@ pnpm db:migrate
 
 - The server keeps provider secrets private and creates a normalized voice session descriptor at `POST /api/voice/session`.
 - The `openai-voice-pipeline` backend accepts one turn at a time at `POST /api/voice/turn`.
-- Student audio is transcribed with `qwen/qwen3-asr-flash` (via OpenRouter), the reasoning stages run on the Flue reasoning worker over the `REASONING` binding, and the spoken reply is synthesized with `google/gemini-3.1-flash-tts` using the `Aoede` voice by default.
+- Student audio is transcribed with `qwen/qwen3-asr-flash` (via OpenRouter), the reasoning stages run in the main Worker through TanStack AI, and the spoken reply is synthesized with `google/gemini-3.1-flash-tts` using the `Aoede` voice by default.
 - The lesson controller is constrained to one small question, hint, or confirmation per turn and returns only the structured tutor action that should be spoken aloud.
 - The browser uses a provider-neutral `VoiceClientAdapter`; the pipeline adapter records one answer clip at a time and plays the returned tutor audio.
 - Image files are decoded in the browser, resized to a 2048px maximum side, flattened onto a white background, encoded as bounded JPEG data URLs, and sent through a provider-neutral user-turn shape.
@@ -79,6 +79,7 @@ For deployment:
 
 ```bash
 pnpm wrangler secret put OPENROUTER_API_KEY
+pnpm wrangler secret put OPENAI_API_KEY
 pnpm wrangler secret put BETTER_AUTH_SECRET
 pnpm wrangler secret put GOOGLE_CLIENT_ID
 pnpm wrangler secret put GOOGLE_CLIENT_SECRET

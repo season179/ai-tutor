@@ -35,7 +35,7 @@ test("splitProviderModelSpecifier keeps the full value as model when the provide
   assert.equal(model, "somelab/their-model");
 });
 
-test("providerModelSpecifier formats split settings for Flue/Pi reasoning calls", () => {
+test("providerModelSpecifier formats split settings for reasoning calls", () => {
   assert.equal(
     providerModelSpecifier({ provider: "openrouter", model: "nvidia/nemotron" }),
     "openrouter/nvidia/nemotron"
