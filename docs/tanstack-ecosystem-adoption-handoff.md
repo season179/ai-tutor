@@ -450,8 +450,9 @@ local portless proxy).
   trace list actually grows large in real use.
 - **Phase 5 — Hotkeys: DONE.** `945c5a1`. `useLocalHotkeys` on the tutor screen:
   `m` mic toggle, `/` focus composer, `g t` traces, `g s` settings. All use
-  `ignoreInputs: true` (typing never interrupted); navigation is two-key sequences
-  so a stray key can't navigate. Scoped to `/` (unregister on unmount). QA:
+  `ignoreInputs: true` (typing never interrupted); `m` mirrors the composer disabled
+  state so it cannot start Echo before the session/question is ready; navigation is
+  two-key sequences so a stray key can't navigate. Scoped to `/` (unregister on unmount). QA:
   `/` focuses composer; `m` ignored while typing (no session started); `g t`/`g s`
   navigate; nothing fires on `/settings`.
 - **Phase 6 — DB spike: DONE (no-go).** Isolated on branch `spike/tanstack-db-sessions`

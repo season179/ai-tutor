@@ -160,6 +160,7 @@ export function App() {
   // returns; useHotkey unregisters on unmount, so they only live while `/` is mounted.
   useLocalHotkeys({
     canRecordAudioTurn,
+    canStartSession: sessionReady && !problemContextStep1.isExtractingQuestion,
     isRecording,
     isRunning,
     onStart: handleStart,

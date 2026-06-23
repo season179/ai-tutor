@@ -6,7 +6,8 @@ import { useNavigate } from "@tanstack/react-router";
  * (`/`) is mounted (the hooks unregister on unmount). These are conveniences for
  * local dogfooding, not required for correctness.
  *
- * - `m` toggles the mic: start a session, begin recording, or stop+send.
+ * - `m` toggles the mic when the composer allows it: start a session, begin
+ *   recording, or stop+send.
  * - `/` focuses the composer.
  * - `g t` opens local traces; `g s` opens settings (vim-style sequences, so a
  *   stray single key never navigates).
@@ -17,6 +18,7 @@ import { useNavigate } from "@tanstack/react-router";
  */
 export type UseLocalHotkeysOptions = {
   canRecordAudioTurn: boolean;
+  canStartSession: boolean;
   isRecording: boolean;
   isRunning: boolean;
   onStart: () => void;
@@ -26,6 +28,7 @@ export type UseLocalHotkeysOptions = {
 
 export function useLocalHotkeys({
   canRecordAudioTurn,
+  canStartSession,
   isRecording,
   isRunning,
   onStart,
@@ -38,7 +41,9 @@ export function useLocalHotkeys({
     "M",
     () => {
       if (!isRunning) {
-        onStart();
+        if (canStartSession) {
+          onStart();
+        }
         return;
       }
       if (isRecording) {
