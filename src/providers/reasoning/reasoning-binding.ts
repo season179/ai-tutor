@@ -55,7 +55,7 @@ export type ReasoningTestTransport = {
  *
  * The stage-specific prompt builders already scrub and order the instructions, frame,
  * history, and student text. Keeping this helper stable lets the rest of the tutor pipeline
- * stay unchanged while the executor moves from Worker B to the app worker.
+ * stay unchanged now that the executor lives in the app worker.
  */
 export function composeReasoningInput(instructions: string, input: string): string {
   return `${instructions}\n\n${input}`;

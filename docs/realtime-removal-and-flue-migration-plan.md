@@ -3,6 +3,10 @@
 *Co-developed by Claude (Opus 4.8) × `pi` — an architecture-consult pass and a review pass on this
 doc, both folded in. Grounded in a file/symbol map of the current code (2026-06-21).*
 
+> Superseded by `docs/adr/0001-flue-reasoning-worker.md` and then
+> `docs/adr/0002-single-worker-reasoning.md`. This is historical planning context, not the current
+> runtime architecture.
+
 ---
 
 ## 0. Decision record (read this first)

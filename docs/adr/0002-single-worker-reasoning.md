@@ -39,6 +39,5 @@ The `/settings` page no longer polls Worker B for model options. It reads the lo
 model registry in `src/modules/settings/reasoning-model-options.ts`; the save validator uses
 the same registry so the dropdown and backend cannot drift.
 
-The generated `reasoning-worker/` tree is no longer on the runtime path. It was left in place
-during the collapse to avoid deleting existing local edits, but the root `wrangler.jsonc`,
-`package.json`, and generated Worker env no longer bind or start it.
+The generated `reasoning-worker/` tree was removed. The root `wrangler.jsonc`, `package.json`,
+and Worker env no longer bind, start, or deploy a second worker.

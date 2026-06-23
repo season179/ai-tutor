@@ -7,7 +7,7 @@ The four reasoning calls (gate-check, verifier, tutor-turn, extract-question) ru
 main TanStack Start Cloudflare Worker through `src/providers/reasoning/reasoning-binding.ts`.
 That adapter uses TanStack AI provider adapters (`@tanstack/ai-openai`,
 `@tanstack/ai-openrouter`) and keeps the existing stage prompts/parsers in Worker A. The old
-Flue Worker B is superseded; see `docs/adr/0002-single-worker-reasoning.md`.
+Flue Worker B has been removed; see `docs/adr/0002-single-worker-reasoning.md`.
 
 The main worker owns all domain logic: scrubbing, the re-ask loop, deterministic verifier
 track, phase logic, `commitTurn`, STT, TTS, and reasoning. STT/TTS still use OpenRouter audio
@@ -38,7 +38,7 @@ pnpm dev
 
 Root `.dev.vars` must contain the main-worker secrets needed by the selected models:
 `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, auth secrets, R2 credentials, and local trace toggles.
-There is no local Worker B process to start.
+There is no Worker B process to start.
 
 ### Deploy
 

@@ -7,7 +7,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -62,4 +62,5 @@ test("reasoning model choices live in the local settings registry, not a Worker 
   const wranglerSource = readFileSync(resolve(repoRoot, "wrangler.jsonc"), "utf8");
   assert.doesNotMatch(wranglerSource, /"REASONING"/);
   assert.doesNotMatch(wranglerSource, /ai-tutor-reasoning/);
+  assert.equal(existsSync(resolve(repoRoot, "reasoning-worker")), false);
 });

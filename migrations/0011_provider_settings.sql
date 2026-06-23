@@ -18,7 +18,7 @@ CREATE TABLE provider_settings (
 );
 
 -- Seed with the values that were previously the env-var defaults (see voice-pipeline-service.ts
--- `default*` constants + reasoning-worker/wrangler.jsonc `vars`), so the app keeps behaving
+-- `default*` constants and the old reasoning env vars), so the app keeps behaving
 -- identically the moment this migration lands, before anyone touches the UI. Audio models run
 -- ON OpenRouter, so the STT/TTS values carry the openrouter provider prefix here (the model
 -- itself may nest a vendor namespace, e.g. openrouter/qwen/qwen3-...). Migration 0014 splits
