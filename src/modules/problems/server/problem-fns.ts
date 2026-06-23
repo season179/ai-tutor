@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { authenticateServerRequest, workerEnv } from "../../../server-request-context.js";
 import { createCloudflareObservability } from "../../../core/cloudflare-observability.js";
+import type { LocalTraceEnv } from "../../../core/local-trace-store.js";
 import { observeStage } from "../../../core/observability.js";
 import { writeServerFnMiddleware } from "../../../core/server-fn-middleware.js";
 import {
@@ -37,17 +38,21 @@ export const extractQuestionFn = createServerFn({ method: "POST" })
   .validator((input: ExtractQuestionRequest) => input)
   .handler(async ({ data }) => {
     const { context, store } = await authenticateServerRequest();
-    const observability = createCloudflareObservability({
-      operation: "extract_question",
-      requestId: crypto.randomUUID(),
-      route: "server_fn",
-      sessionId: data.sessionId,
-      worker: "ai-tutor"
-    });
+    const env = workerEnv();
+    const observability = createCloudflareObservability(
+      {
+        operation: "extract_question",
+        requestId: crypto.randomUUID(),
+        route: "server_fn",
+        sessionId: data.sessionId,
+        worker: "ai-tutor"
+      },
+      { env: env as LocalTraceEnv }
+    );
     return observeStage(observability, "problem.extract_request", {}, () =>
       handleExtractQuestionRequest(
         data,
-        createProblemContextHandlerEnv(workerEnv()),
+        createProblemContextHandlerEnv(env),
         store,
         context,
         observability

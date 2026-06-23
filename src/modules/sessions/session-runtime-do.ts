@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import { createCloudflareObservability } from "../../core/cloudflare-observability.js";
+import type { LocalTraceEnv } from "../../core/local-trace-store.js";
 import { observeStage } from "../../core/observability.js";
 import { D1SessionStore } from "./d1-session-store.js";
 import type { RequestContext } from "../../core/request-context.js";
@@ -25,13 +26,19 @@ type SessionRuntimeEnv = VoicePipelineServiceEnv & {
 export class SessionRuntimeDO extends DurableObject<SessionRuntimeEnv> {
   async processTurn(payload: ProcessTurnPayload): Promise<VoicePipelineTurnResponse> {
     const request = payload.body as Partial<VoicePipelineTurnRequest>;
-    const observability = createCloudflareObservability({
-      operation: "voice_turn",
-      route: "durable_object",
-      sessionId: typeof request.sessionId === "string" ? request.sessionId : undefined,
-      turnId: crypto.randomUUID(),
-      worker: "ai-tutor"
-    });
+    const observability = createCloudflareObservability(
+      {
+        operation: "voice_turn",
+        route: "durable_object",
+        sessionId: typeof request.sessionId === "string" ? request.sessionId : undefined,
+        turnId: crypto.randomUUID(),
+        worker: "ai-tutor"
+      },
+      {
+        env: this.env as LocalTraceEnv,
+        waitUntil: (promise) => this.ctx.waitUntil(promise)
+      }
+    );
 
     return observeStage(observability, "voice.turn", {}, async () => {
       const store = new D1SessionStore(this.env.DB);

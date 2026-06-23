@@ -4,6 +4,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { authenticateServerRequest, workerEnv } from "../../../server-request-context.js";
 import { createCloudflareObservability } from "../../../core/cloudflare-observability.js";
 import { HttpError } from "../../../core/http-error.js";
+import type { LocalTraceEnv } from "../../../core/local-trace-store.js";
 import { observeStage } from "../../../core/observability.js";
 import {
   serverFnMiddleware,
@@ -98,20 +99,24 @@ export const voicePipelineTurnFn = createServerFn({ method: "POST" })
     // through it when the binding is present, falling back to the direct pipeline
     // (e.g. local dev without the DO) otherwise.
     const parsed = parseVoicePipelineTurnRequest(data);
-    const sessionRuntime = workerEnv().SESSION_RUNTIME;
+    const env = workerEnv();
+    const sessionRuntime = env.SESSION_RUNTIME;
     if (sessionRuntime) {
       const stub = sessionRuntime.getByName(parsed.sessionId);
       return stub.processTurn({ body: data, context });
     }
 
-    const observability = createCloudflareObservability({
-      operation: "voice_turn",
-      route: "direct",
-      sessionId: parsed.sessionId,
-      turnId: crypto.randomUUID(),
-      worker: "ai-tutor"
-    });
+    const observability = createCloudflareObservability(
+      {
+        operation: "voice_turn",
+        route: "direct",
+        sessionId: parsed.sessionId,
+        turnId: crypto.randomUUID(),
+        worker: "ai-tutor"
+      },
+      { env: env as LocalTraceEnv }
+    );
     return observeStage(observability, "voice.turn", {}, () =>
-      handleVoicePipelineTurnWithStore(data, workerEnv(), store, context, observability)
+      handleVoicePipelineTurnWithStore(data, env, store, context, observability)
     );
   });

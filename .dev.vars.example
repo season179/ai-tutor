@@ -30,3 +30,8 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 R2_ACCESS_KEY_ID=your-r2-access-key-id
 R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
 R2_ACCOUNT_ID=your-cloudflare-account-id
+
+# Local-only timing trace buffer. When enabled, safe stage timing events are mirrored
+# into the local D1 database and shown at /debug/traces during `pnpm dev`.
+LOCAL_TRACE_DEBUG=1
+LOCAL_TRACE_LIMIT=500
