@@ -4,6 +4,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import appCss from "../styles/app.css?url";
+import { Devtools } from "../client/components/devtools/Devtools.js";
 
 // Root document shell — replaces the old static public/index.html. Start renders
 // the matched route tree into <body>; the tutoring screen mounts client-side.
@@ -29,6 +30,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <body>
         {children}
         <Scripts />
+        <Devtools />
       </body>
     </html>
   );
