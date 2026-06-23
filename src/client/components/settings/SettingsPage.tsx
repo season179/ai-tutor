@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 
 import { ActionButton } from "../ActionButton.js";
@@ -20,6 +21,7 @@ import {
   type SettingsModelOptions,
   type SettingType
 } from "../../../modules/settings/settings-types.js";
+import { providerSettingsPatchSchema } from "../../../modules/settings/settings-schema.js";
 import { classNames } from "../../lib/class-names.js";
 
 /**
@@ -69,17 +71,21 @@ export function SettingsPage() {
     saveState,
     isSaving
   } = useSettings();
-  // Local draft state, seeded from the query snapshot. `settingsVersion` invalidates the
-  // draft when a fresh snapshot arrives (initial load or an external mutation).
-  const [draft, setDraft] = useState<ProviderSettings>(emptyDraft);
-  const [settingsVersion, setSettingsVersion] = useState(0);
+  // TanStack Form owns the draft now. `form.reset` on a fresh snapshot replaces the old
+  // `settingsVersion` remount trick: each input is controlled by `form.state.values`, so
+  // resetting the form updates them without a key bump. `resetVersion` still bumps on each
+  // sync to preserve the exact remount-on-snapshot behavior of the catalog selects.
+  const form = useForm({
+    defaultValues: settings ?? emptyDraft
+  });
+  const [resetVersion, setResetVersion] = useState(0);
 
   useEffect(() => {
     if (settings) {
-      setDraft(settings);
-      setSettingsVersion((v) => v + 1);
+      form.reset(settings);
+      setResetVersion((v) => v + 1);
     }
-  }, [settings]);
+  }, [settings, form]);
 
   if (isAuthLoading) {
     return <main className="settings-page" aria-busy="true" />;
@@ -116,17 +122,22 @@ export function SettingsPage() {
     return <main className="settings-page" aria-busy="true" />;
   }
 
-  const dirty = settings ? hasChanges(draft, settings) : false;
-
   function updateField<T extends SettingType>(type: T, value: ProviderSettings[T]): void {
-    setDraft((prev) => ({ ...prev, [type]: value }));
+    // `type` and `value` are always a matched pair at the call sites, but TS can't
+    // correlate the generic across setFieldValue's own type param, so cast through.
+    form.setFieldValue(type, value as never);
   }
 
   async function handleSave(): Promise<void> {
     if (!settings) {
       return;
     }
-    const patch = diff(draft, settings);
+    const patch = diff(form.state.values, settings);
+    // Reuse the server's patch schema as the client-side pre-write gate so an
+    // unsupported value is rejected before the round-trip. One schema, no drift.
+    if (!providerSettingsPatchSchema.safeParse(patch).success) {
+      return;
+    }
     await save(patch);
   }
 
@@ -145,36 +156,43 @@ export function SettingsPage() {
         </p>
       ) : null}
 
-      <div className="settings-body">
-        <SettingsSection
-          title="Audio"
-          description="Speech-to-text and text-to-speech models (Worker A, OpenRouter)."
-          fields={AUDIO_FIELDS}
-          draft={draft}
-          settingsVersion={settingsVersion}
-          disabled={isSaving}
-          onFieldChange={updateField}
-        />
-        <SettingsSection
-          title="Reasoning"
-          description="Per-stage LLM models. Each is sent to the in-app reasoning executor per call."
-          fields={REASONING_FIELDS}
-          draft={draft}
-          modelOptions={modelOptions}
-          modelOptionsError={modelOptionsError}
-          modelOptionsLoading={isModelOptionsLoading}
-          settingsVersion={settingsVersion}
-          disabled={isSaving}
-          onFieldChange={updateField}
-        />
+      {/* TanStack Form does not auto-subscribe this component to its store, so reading
+          `form.state` directly is a non-reactive snapshot. Subscribe to the slice we need
+          (current values for the inputs + isDirty for Save gating) so edits re-render. */}
+      <form.Subscribe selector={(state) => ({ values: state.values, isDirty: state.isDirty })}>
+        {({ values, isDirty }) => (
+          <div className="settings-body">
+            <SettingsSection
+              title="Audio"
+              description="Speech-to-text and text-to-speech models (Worker A, OpenRouter)."
+              fields={AUDIO_FIELDS}
+              draft={values}
+              settingsVersion={resetVersion}
+              disabled={isSaving}
+              onFieldChange={updateField}
+            />
+            <SettingsSection
+              title="Reasoning"
+              description="Per-stage LLM models. Each is sent to the in-app reasoning executor per call."
+              fields={REASONING_FIELDS}
+              draft={values}
+              modelOptions={modelOptions}
+              modelOptionsError={modelOptionsError}
+              modelOptionsLoading={isModelOptionsLoading}
+              settingsVersion={resetVersion}
+              disabled={isSaving}
+              onFieldChange={updateField}
+            />
 
-        <div className="settings-actions">
-          <ActionButton variant="primary" onClick={handleSave} disabled={!dirty || isSaving}>
-            {isSaving ? "Saving…" : "Save changes"}
-          </ActionButton>
-          <SaveStatus state={saveState} />
-        </div>
-      </div>
+            <div className="settings-actions">
+              <ActionButton variant="primary" onClick={handleSave} disabled={!isDirty || isSaving}>
+                {isSaving ? "Saving…" : "Save changes"}
+              </ActionButton>
+              <SaveStatus state={saveState} />
+            </div>
+          </div>
+        )}
+      </form.Subscribe>
     </main>
   );
 }
@@ -450,14 +468,6 @@ const emptyDraft: ProviderSettings = {
   tutor_model: { provider: "openrouter", model: "" },
   extract_model: { provider: "openai", model: "" }
 };
-
-/** True when the draft differs from the loaded snapshot in any field. */
-function hasChanges(
-  draft: ProviderSettings,
-  snapshot: ProviderSettings
-): boolean {
-  return SETTING_FIELDS.some((f) => !settingValuesEqual(f.type, draft[f.type], snapshot[f.type]));
-}
 
 /** Returns only the fields whose draft value differs from the snapshot (the patch to save). */
 function diff(
