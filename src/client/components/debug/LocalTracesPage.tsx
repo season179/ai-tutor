@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useThrottledCallback } from "@tanstack/react-pacer";
 import { Link } from "@tanstack/react-router";
 
 import type { LocalTraceEvent, LocalTraceRun } from "../../../core/local-trace-types.js";
@@ -28,6 +29,14 @@ export function LocalTracesPage() {
     mutationFn: clearLocalTraces,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: TRACE_QUERY_KEY })
   });
+
+  // Manual refresh is throttled so rapid clicks coalesce into a single fetch.
+  // The disabled-while-fetching guard below stays; this covers the gap between
+  // a click and `isFetching` flipping true. Leading edge fires the first click
+  // immediately, trailing edge stays off so a dropped click never fires late.
+  const refresh = useThrottledCallback(() => {
+    void tracesQuery.refetch();
+  }, { wait: 500, leading: true, trailing: false });
 
   const runs = tracesQuery.data?.runs ?? [];
   const selectedRun = useMemo(
@@ -67,7 +76,7 @@ export function LocalTracesPage() {
           <button
             className="trace-action"
             type="button"
-            onClick={() => tracesQuery.refetch()}
+            onClick={refresh}
             disabled={tracesQuery.isFetching}
           >
             Refresh

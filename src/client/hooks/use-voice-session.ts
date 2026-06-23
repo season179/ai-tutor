@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
+import { useThrottledCallback } from "@tanstack/react-pacer";
+
 import {
   createVoiceClientAdapter,
   type VoiceClientEvent
@@ -37,7 +39,7 @@ function describeVoiceSession(descriptor: VoiceSessionDescriptor): Record<string
 
 export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessionOptions): {
   canRecordAudioTurn: boolean;
-  finishAudioTurn: () => Promise<void>;
+  finishAudioTurn: () => void;
   isRunning: boolean;
   isRecording: boolean;
   sendTextTurn: (text: string) => Promise<void>;
@@ -333,7 +335,12 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
     }
   }, [logEvent, setStatus]);
 
-  const finishAudioTurn = useCallback(async () => {
+  // "Stop and send" is throttled on the leading edge: the first click fires
+  // and a rapid second click inside the window is ignored, so a double-tap
+  // can't start a duplicate voice turn. Trailing edge is off so a dropped
+  // click never fires a delayed duplicate. The adapter still owns the real
+  // teardown; Pacer is an extra guard, not a replacement for recording state.
+  const finishAudioTurn = useThrottledCallback(async () => {
     const activeSession = sessionRef.current;
 
     if (!activeSession) {
@@ -348,7 +355,7 @@ export function useVoiceSession({ audioRef, logEvent, sessionId }: UseVoiceSessi
       setStatus(errorMessage(error, "Could not send your answer."), "error");
       logEvent("Recording send failed", errorLogValue(error));
     }
-  }, [logEvent, setStatus]);
+  }, { wait: 1000, leading: true, trailing: false });
 
   // Typed turns share the audio path: connect on demand (without a greeting, since
   // the child's message is the opening turn), send the text, and the pipeline
