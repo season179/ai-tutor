@@ -454,11 +454,17 @@ local portless proxy).
   so a stray key can't navigate. Scoped to `/` (unregister on unmount). QA:
   `/` focuses composer; `m` ignored while typing (no session started); `g t`/`g s`
   navigate; nothing fires on `/settings`.
-- **Phase 6 — DB spike: PENDING.** Intentionally a separate-branch spike, not a
-  main adoption. `@tanstack/react-db` is 0.1.87 (very alpha). The spike must
-  answer the five questions and is expected to conclude "do not adopt yet" if the
-  only win is "more TanStack" or it fights the existing Query usage.
+- **Phase 6 — DB spike: DONE (no-go).** Isolated on branch `spike/tanstack-db-sessions`
+  (NOT merged to main; the ADR `docs/adr/0003-tanstack-db-spike.md` is the only artifact
+  carried to main). The spike wraps the existing `listSessions` server fn in a
+  `@tanstack/react-db` collection (no D1 change) and answers all 5 questions with
+  passing tests (4/4). **Verdict: do not adopt yet.** The only real win (optimistic
+  rename) is already a ~5-line addition to the existing `useMutation` cache patch;
+  the rollback story has a sharp edge (a failed `mutationFn` resolves the Transaction
+  with `state === 'completed'`, not `'failed'`, so errors aren't surfaced — the
+  caller must catch + refetch); and DB adds a second state model (collections /
+  transactions / optimistic actions) alongside the Query model the whole app uses,
+  for a session list that isn't the bottleneck. Revisit when a local-first
+  mutate-heavy surface arrives or the lib stabilizes past 0.x.
 - **Phase 7 — Deeper AI: PENDING.** Research-only with hard guardrails (no Code
   Mode, no arbitrary tools, keep `phase-policy`/`tutor-action-validator`/verifier).
-
-Next up is Phase 6 on a fresh spike branch.
