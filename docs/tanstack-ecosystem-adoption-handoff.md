@@ -466,5 +466,16 @@ local portless proxy).
   transactions / optimistic actions) alongside the Query model the whole app uses,
   for a session list that isn't the bottleneck. Revisit when a local-first
   mutate-heavy surface arrives or the lib stabilizes past 0.x.
-- **Phase 7 — Deeper AI: PENDING.** Research-only with hard guardrails (no Code
-  Mode, no arbitrary tools, keep `phase-policy`/`tutor-action-validator`/verifier).
+- **Phase 7 — Deeper AI: DONE (no-go, research only).** Audited the current
+  TanStack AI usage against the current library API (`@tanstack/ai` 0.33.0
+  installed, 0.34.0 latest) and recorded a go/no-go on each allowed workstream in
+  `docs/adr/0004-phase7-tanstack-ai-research.md`. The codebase already uses the
+  current `chat({ outputSchema })` structured-output API with strict Zod schemas
+  and `observeStage` per-call observability. **No runtime changes ship:** the four
+  schemas + constrained move/nextPhase enums are already as strict as the library
+  offers; observability already separates trace stages; streaming tutor text
+  before validation would break the verifier/phase-policy gate (a hard phase
+  constraint); and tool-calls would add a surface that risks revealing hidden
+  state. Invariants verified: guardrail files byte-for-byte unchanged, 29 guardrail
+  tests pass, trace stages still distinct. All seven phases of the plan are now
+  resolved.
