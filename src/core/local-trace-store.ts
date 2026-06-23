@@ -129,8 +129,9 @@ function clampLimit(value: number): number {
 }
 
 async function ensureLocalTraceTable(db: D1Database): Promise<void> {
-  initPromise ??= db.exec(
-    `CREATE TABLE IF NOT EXISTS local_trace_events (
+  initPromise ??= (async () => {
+    await db.prepare(
+      `CREATE TABLE IF NOT EXISTS local_trace_events (
        id TEXT PRIMARY KEY,
        recorded_at TEXT NOT NULL,
        trace_id TEXT,
@@ -143,12 +144,17 @@ async function ensureLocalTraceTable(db: D1Database): Promise<void> {
        workflow TEXT,
        model TEXT,
        payload_json TEXT NOT NULL
-     );
-     CREATE INDEX IF NOT EXISTS local_trace_events_recorded_at_idx
-       ON local_trace_events(recorded_at);
-     CREATE INDEX IF NOT EXISTS local_trace_events_session_id_idx
-       ON local_trace_events(session_id);`
-  ).then(() => undefined);
+     )`
+    ).run();
+    await db.prepare(
+      `CREATE INDEX IF NOT EXISTS local_trace_events_recorded_at_idx
+         ON local_trace_events(recorded_at)`
+    ).run();
+    await db.prepare(
+      `CREATE INDEX IF NOT EXISTS local_trace_events_session_id_idx
+         ON local_trace_events(session_id)`
+    ).run();
+  })();
 
   try {
     await initPromise;
