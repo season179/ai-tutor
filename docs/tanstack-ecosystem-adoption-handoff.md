@@ -432,10 +432,11 @@ local portless proxy).
   no trailing); `finishAudioTurn` throttled (leading, 1000ms) so a double-tap
   can't start a duplicate voice turn. QA: 4x rapid Refresh burst → no console
   errors, traces loaded; home composer intact.
-- **Phase 2 — Form for `/settings`: DONE.** `29ad657`. Draft/dirty/patch moved to
-  TanStack Form (`form.Subscribe` for reactive `values`/`isDirty`); patch validated
-  client-side with the existing `providerSettingsPatchSchema` (one schema, no
-  drift). QA (local admin session in local D1 sandbox): load, reactive dirty
+- **Phase 2 — Form for `/settings`: DONE.** `29ad657`. Draft moved to
+  TanStack Form (`form.Subscribe` for reactive `values`); dirty/save gating uses
+  the same field diff that builds the patch, and the patch is validated client-side
+  with the existing `providerSettingsPatchSchema` (one schema, no drift). QA
+  (local admin session in local D1 sandbox): load, reactive dirty
   gating, save writes only the edited key (verified in `provider_settings`),
   value survives reload, back-nav, non-admin still "Not authorized".
 - **Phase 3 — Devtools: DONE.** `97f8e2e`. Unified panel mounted dev-only from the

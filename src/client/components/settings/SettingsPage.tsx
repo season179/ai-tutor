@@ -79,10 +79,12 @@ export function SettingsPage() {
     defaultValues: settings ?? emptyDraft
   });
   const [resetVersion, setResetVersion] = useState(0);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (settings) {
       form.reset(settings);
+      setValidationMessage(null);
       setResetVersion((v) => v + 1);
     }
   }, [settings, form]);
@@ -125,6 +127,7 @@ export function SettingsPage() {
   function updateField<T extends SettingType>(type: T, value: ProviderSettings[T]): void {
     // `type` and `value` are always a matched pair at the call sites, but TS can't
     // correlate the generic across setFieldValue's own type param, so cast through.
+    setValidationMessage(null);
     form.setFieldValue(type, value as never);
   }
 
@@ -135,7 +138,9 @@ export function SettingsPage() {
     const patch = diff(form.state.values, settings);
     // Reuse the server's patch schema as the client-side pre-write gate so an
     // unsupported value is rejected before the round-trip. One schema, no drift.
-    if (!providerSettingsPatchSchema.safeParse(patch).success) {
+    const validationResult = providerSettingsPatchSchema.safeParse(patch);
+    if (!validationResult.success) {
+      setValidationMessage("Fill in every changed setting before saving.");
       return;
     }
     await save(patch);
@@ -157,41 +162,54 @@ export function SettingsPage() {
       ) : null}
 
       {/* TanStack Form does not auto-subscribe this component to its store, so reading
-          `form.state` directly is a non-reactive snapshot. Subscribe to the slice we need
-          (current values for the inputs + isDirty for Save gating) so edits re-render. */}
-      <form.Subscribe selector={(state) => ({ values: state.values, isDirty: state.isDirty })}>
-        {({ values, isDirty }) => (
-          <div className="settings-body">
-            <SettingsSection
-              title="Audio"
-              description="Speech-to-text and text-to-speech models (Worker A, OpenRouter)."
-              fields={AUDIO_FIELDS}
-              draft={values}
-              settingsVersion={resetVersion}
-              disabled={isSaving}
-              onFieldChange={updateField}
-            />
-            <SettingsSection
-              title="Reasoning"
-              description="Per-stage LLM models. Each is sent to the in-app reasoning executor per call."
-              fields={REASONING_FIELDS}
-              draft={values}
-              modelOptions={modelOptions}
-              modelOptionsError={modelOptionsError}
-              modelOptionsLoading={isModelOptionsLoading}
-              settingsVersion={resetVersion}
-              disabled={isSaving}
-              onFieldChange={updateField}
-            />
+          `form.state` directly is a non-reactive snapshot. Subscribe to current values
+          for the inputs; Save gating stays a field-by-field diff against the server
+          snapshot so it matches the exact patch that will be posted. */}
+      <form.Subscribe selector={(state) => state.values}>
+        {(values) => {
+          const dirty = settings ? hasChanges(values, settings) : false;
+          return (
+            <div className="settings-body">
+              <SettingsSection
+                title="Audio"
+                description="Speech-to-text and text-to-speech models (Worker A, OpenRouter)."
+                fields={AUDIO_FIELDS}
+                draft={values}
+                settingsVersion={resetVersion}
+                disabled={isSaving}
+                onFieldChange={updateField}
+              />
+              <SettingsSection
+                title="Reasoning"
+                description="Per-stage LLM models. Each is sent to the in-app reasoning executor per call."
+                fields={REASONING_FIELDS}
+                draft={values}
+                modelOptions={modelOptions}
+                modelOptionsError={modelOptionsError}
+                modelOptionsLoading={isModelOptionsLoading}
+                settingsVersion={resetVersion}
+                disabled={isSaving}
+                onFieldChange={updateField}
+              />
 
-            <div className="settings-actions">
-              <ActionButton variant="primary" onClick={handleSave} disabled={!isDirty || isSaving}>
-                {isSaving ? "Saving…" : "Save changes"}
-              </ActionButton>
-              <SaveStatus state={saveState} />
+              <div className="settings-actions">
+                <ActionButton variant="primary" onClick={handleSave} disabled={!dirty || isSaving}>
+                  {isSaving ? "Saving…" : "Save changes"}
+                </ActionButton>
+                {validationMessage ? (
+                  <span
+                    className={classNames("settings-save-status", "settings-save-status--error")}
+                    role="alert"
+                  >
+                    {validationMessage}
+                  </span>
+                ) : (
+                  <SaveStatus state={saveState} />
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        }}
       </form.Subscribe>
     </main>
   );
@@ -468,6 +486,14 @@ const emptyDraft: ProviderSettings = {
   tutor_model: { provider: "openrouter", model: "" },
   extract_model: { provider: "openai", model: "" }
 };
+
+/** True when the draft differs from the loaded snapshot in any field. */
+function hasChanges(
+  draft: ProviderSettings,
+  snapshot: ProviderSettings
+): boolean {
+  return SETTING_FIELDS.some((f) => !settingValuesEqual(f.type, draft[f.type], snapshot[f.type]));
+}
 
 /** Returns only the fields whose draft value differs from the snapshot (the patch to save). */
 function diff(
